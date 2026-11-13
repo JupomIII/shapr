@@ -10,7 +10,8 @@ import { Icon } from './Icons';
 export const fmtNum = (v: number, digits = 2): string => {
   if (!isFinite(v)) return '0';
   const s = v.toFixed(digits);
-  return s.replace(/\.?0+$/, '') || '0';
+  // Only trim zeros that belong to the decimals: 22730 must not become 2273.
+  return (s.includes('.') ? s.replace(/\.?0+$/, '') : s) || '0';
 };
 
 const clampToViewport = (x: number, y: number) => {
