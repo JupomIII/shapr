@@ -117,7 +117,7 @@ export function SketchBadges() {
   };
 
   return (
-    <div className="constraint-row" style={{ left: at.x, top: at.y - 48 }}>
+    <div className="constraint-row" style={{ left: at.x - 30, top: at.y - 46 }}>
       {list.map((c) => {
         const label = NAME[c.kind] ?? c.kind;
         return (

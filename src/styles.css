@@ -1509,7 +1509,7 @@ textarea {
   z-index: 7;
   display: flex;
   gap: 3px;
-  transform: translate(-50%, -50%);
+  transform: translate(-100%, -50%);
   pointer-events: none;
 }
 .constraint-badge {
