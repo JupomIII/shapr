@@ -1502,3 +1502,41 @@ textarea {
   color: var(--text, #e7edf3);
   font-weight: 600;
 }
+
+/* -------------------------- sketch constraints --------------------------- */
+.constraint-row {
+  position: absolute;
+  z-index: 7;
+  display: flex;
+  gap: 3px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.constraint-badge {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(24, 29, 36, 0.94);
+  color: #cfe0f2;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+.constraint-badge.dim {
+  color: #8fd0ff;
+  font-variant-numeric: tabular-nums;
+}
+.constraint-badge:active {
+  background: #2a3542;
+}
+.stat-item.ok {
+  color: #4ecb8b;
+}
+.stat-item.warn {
+  color: #f0a03a;
+}

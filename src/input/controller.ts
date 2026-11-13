@@ -79,6 +79,8 @@ export class InteractionController {
   private chain: Vec2 | null = null;
   private box: { start: { x: number; y: number }; el: HTMLDivElement } | null = null;
   private orbitDrag: { x: number; y: number } | null = null;
+  /** Repeated taps on the same spot cycle through what is stacked there. */
+  private lastPick: { x: number; y: number; t: number; i: number } | null = null;
   private lastPendingAt = 0;
   private hoverRaf = 0;
   private lastHover: { x: number; y: number } | null = null;
@@ -285,23 +287,37 @@ export class InteractionController {
       }
       return;
     }
-    // Select mode: resolve by proximity so finger taps work too.
+    // Select mode: resolve by proximity so finger taps work too. Everything
+    // stacked under the pointer becomes a candidate, and tapping the same spot
+    // again steps to the next one instead of forcing a zoom-in.
     const edge = this.vp.pickEdge(p.x, p.y);
-    if (edge) {
-      S.selectItem({ kind: 'edge', bodyId: edge.bodyId, edgeKey: edge.edge.key });
-      return;
-    }
     const face = this.vp.pickFace(p.x, p.y);
-    if (face) {
-      S.selectItem({ kind: 'face', bodyId: face.bodyId, faceIndex: face.faceIndex, point: face.point });
-      return;
-    }
     const region = this.pickRegion(p.x, p.y);
-    if (region) {
-      S.selectItem(region);
+    const candidates: SelectionItem[] = [];
+    if (edge) candidates.push({ kind: 'edge', bodyId: edge.bodyId, edgeKey: edge.edge.key });
+    if (face)
+      candidates.push({
+        kind: 'face',
+        bodyId: face.bodyId,
+        faceIndex: face.faceIndex,
+        point: face.point,
+      });
+    if (face) candidates.push({ kind: 'body', bodyId: face.bodyId });
+    if (region) candidates.push(region);
+
+    if (!candidates.length) {
+      this.lastPick = null;
+      S.selectItem(null);
       return;
     }
-    S.selectItem(null);
+
+    const now = performance.now();
+    const last = this.lastPick;
+    const repeat =
+      !!last && now - last.t < 1200 && Math.hypot(p.x - last.x, p.y - last.y) < 26;
+    const index = repeat ? (last!.i + 1) % candidates.length : 0;
+    this.lastPick = { x: p.x, y: p.y, t: now, i: index };
+    S.selectItem(candidates[index]);
   }
 
   private handleDoubleTap(p: PointerSample) {

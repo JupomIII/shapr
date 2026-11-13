@@ -59,6 +59,8 @@ const COLORS = {
   accentSoft: 0x2f8fdc,
   sketch: 0x9db0c2,
   sketchActive: 0x35c7d8,
+  sketchDefined: 0x4ecb8b,
+  openEnd: 0xf0a03a,
   grid: 0x23272d,
   gridMajor: 0x2e333b,
   axisX: 0x8f4a44,
@@ -466,7 +468,12 @@ export class Viewport {
 
   /* --------------------------------- sketches ------------------------------- */
 
-  setSketch(sketches: Sketch[], activeId: string | null, selectedEntityId?: string | null) {
+  setSketch(
+    sketches: Sketch[],
+    activeId: string | null,
+    selectedEntityId?: string | null,
+    state?: { fullyDefined: boolean; open: Vec2[] } | null,
+  ) {
     this.disposeGroup(this.sketchGroup);
 
     for (const sk of sketches) {
@@ -477,7 +484,13 @@ export class Viewport {
         n: sk.plane.n as Vec3,
       };
       const isActive = sk.id === activeId;
-      const color = isActive ? COLORS.sketchActive : COLORS.sketch;
+      // Shapr3D colour language: blue while the sketch can still move, green
+      // once the solver says it is fully defined.
+      const color = isActive
+        ? state?.fullyDefined
+          ? COLORS.sketchDefined
+          : COLORS.sketchActive
+        : COLORS.sketch;
 
       // Faint plane fill for the active sketch.
       if (isActive) {
@@ -546,6 +559,27 @@ export class Viewport {
           new THREE.PointsMaterial({ color: 0xdfe6ee, size: 3.5, sizeAttenuation: false }),
         );
         pts.renderOrder = 5;
+        this.sketchGroup.add(pts);
+      }
+
+      // Open ends: where the profile is still broken, so Finish sketch is not
+      // a leap of faith.
+      if (isActive && state?.open.length) {
+        const g = new THREE.BufferGeometry();
+        g.setAttribute(
+          'position',
+          new THREE.Float32BufferAttribute(state.open.flatMap((p) => to3D(frame, p)), 3),
+        );
+        const pts = new THREE.Points(
+          g,
+          new THREE.PointsMaterial({
+            color: COLORS.openEnd,
+            size: 7,
+            sizeAttenuation: false,
+            depthTest: false,
+          }),
+        );
+        pts.renderOrder = 6;
         this.sketchGroup.add(pts);
       }
 

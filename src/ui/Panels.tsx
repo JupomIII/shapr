@@ -819,6 +819,27 @@ export function HelpPanel() {
           <span className="keys">Face</span>
           <span className="desc">Its arrow offsets the face, dragging inward cuts</span>
         </div>
+        <div className="panel-section-title">Sketch feedback</div>
+        <div className="help-row">
+          <span className="keys">Blue</span>
+          <span className="desc">Still under-defined: the solver can move this geometry</span>
+        </div>
+        <div className="help-row">
+          <span className="keys">Green</span>
+          <span className="desc">Fully defined: nothing can move any more</span>
+        </div>
+        <div className="help-row">
+          <span className="keys">Orange dots</span>
+          <span className="desc">Open ends — the profile is not closed yet</span>
+        </div>
+        <div className="help-row">
+          <span className="keys">Constraint badges</span>
+          <span className="desc">Shown on the selected element; tap one to remove it</span>
+        </div>
+        <div className="help-row">
+          <span className="keys">Status bar</span>
+          <span className="desc">Live degrees of freedom, closed profiles and open ends</span>
+        </div>
         <div className="help-row">
           <span className="keys">Edge</span>
           <span className="desc">Drag its handle for a live fillet radius</span>

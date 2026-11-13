@@ -4,6 +4,7 @@ import { measureSolid } from '../kernel/solid';
 import { UNIT_FACTOR } from '../model/types';
 import * as S from '../state/store';
 import * as OPS from '../state/ops';
+import type { SketchDiagnostics } from '../sketch/diagnostics';
 import { Icon, IconName } from './Icons';
 
 const fmt = (v: number, digits = 2): string => {
@@ -601,7 +602,7 @@ export function ViewCubeOverlay() {
 
 /* ------------------------------- bottom dock ------------------------------- */
 
-export function StatusRight() {
+export function StatusRight({ diag }: { diag?: SketchDiagnostics | null }) {
   const s = S.useApp();
   const bodies = s.evalResult.bodies;
   const errors = Object.keys(s.evalResult.errors).length;
@@ -644,6 +645,24 @@ export function StatusRight() {
       </div>
 
       <div className="stats">
+        {s.mode === 'sketch' && s.activeSketchId ? (
+          <>
+            <span className={`stat-item ${diag?.fullyDefined ? 'ok' : ''}`}>
+              {diag?.fullyDefined ? 'Fully defined' : `${diag?.dof ?? 0} dof`}
+            </span>
+            <span
+              className={`stat-item ${(s.evalResult.regions[s.activeSketchId]?.length ?? 0) ? '' : 'err'}`}
+            >
+              <b>{s.evalResult.regions[s.activeSketchId]?.length ?? 0}</b>{' '}
+              {(s.evalResult.regions[s.activeSketchId]?.length ?? 0) === 1 ? 'profile' : 'profiles'}
+            </span>
+            {diag?.open.length ? (
+              <span className="stat-item warn">
+                {diag.open.length} open {diag.open.length === 1 ? 'end' : 'ends'}
+              </span>
+            ) : null}
+          </>
+        ) : null}
         {summary ? <span className="stat-item">{summary}</span> : null}
         {errors > 0 ? (
           <span className="stat-item err">

@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "npm run test:sketch",
+    "test:sketch": "esbuild scripts/sketch-check.ts --bundle --platform=node --format=esm --outfile=tmp/sketch-check.mjs --log-level=error && node tmp/sketch-check.mjs"
   },
   "dependencies": {
     "earcut": "^3.0.1",

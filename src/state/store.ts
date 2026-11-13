@@ -79,7 +79,13 @@ export interface AppState {
   visibleSketchIds: string[];
   selection: SelectionItem[];
   hover: SelectionItem | null;
-  history: { past: ProjectDoc[]; future: ProjectDoc[] };
+  /** Documents plus the selection each step started from, so undo restores both. */
+  history: {
+    past: ProjectDoc[];
+    future: ProjectDoc[];
+    pastSel: SelectionItem[][];
+    futureSel: SelectionItem[][];
+  };
   panel: Panel;
   pending: PendingOp | null;
   toast: { id: number; text: string } | null;
@@ -113,7 +119,12 @@ export const store = {
     visibleSketchIds: [] as string[],
     selection: [] as SelectionItem[],
     hover: null,
-    history: { past: [] as ProjectDoc[], future: [] as ProjectDoc[] },
+    history: {
+      past: [] as ProjectDoc[],
+      future: [] as ProjectDoc[],
+      pastSel: [] as SelectionItem[][],
+      futureSel: [] as SelectionItem[][],
+    },
     panel: 'none' as Panel,
     pending: null,
     toast: null,
@@ -225,17 +236,35 @@ export function commit({ mutate, select, label }: CommitOptions) {
   mutate(doc);
   doc.updatedAt = Date.now();
   const past = [...s.history.past, before].slice(-80);
+  const pastSel = [...s.history.pastSel, s.selection].slice(-80);
   const evalResult = evaluate(doc);
   const geometryVersion = s.geometryVersion + 1;
   store.set({
     doc,
     evalResult,
     geometryVersion,
-    history: { past, future: [] },
+    history: { past, future: [], pastSel, futureSel: [] },
     ...(select !== undefined ? { selection: select } : {}),
   });
   scheduleAutosave();
   if (label) console.debug('[shapr]', label);
+}
+
+/** Keep only the references that still resolve in the restored document. */
+function revivableSelection(
+  items: SelectionItem[] | undefined,
+  doc: ProjectDoc,
+  ev: EvalResult,
+): SelectionItem[] {
+  if (!items?.length) return [];
+  const bodyIds = new Set(ev.bodies.map((b) => b.id));
+  const sketchIds = new Set(doc.sketches.map((s) => s.id));
+  return items.filter((it) => {
+    if (it.kind === 'region' || it.kind === 'sketchEntity') {
+      return !!it.sketchId && sketchIds.has(it.sketchId);
+    }
+    return !it.bodyId || bodyIds.has(it.bodyId);
+  });
 }
 
 export function undo() {
@@ -246,14 +275,17 @@ export function undo() {
   }
   const past = s.history.past.slice();
   const prev = past.pop()!;
+  const pastSel = s.history.pastSel.slice();
+  const restoreSel = pastSel.pop();
   const future = [deepClone(s.doc), ...s.history.future].slice(0, 80);
+  const futureSel = [s.selection, ...s.history.futureSel].slice(0, 80);
   const evalResult = evaluate(prev);
   store.set({
     doc: prev,
     evalResult,
     geometryVersion: s.geometryVersion + 1,
-    history: { past, future },
-    selection: [],
+    history: { past, future, pastSel, futureSel },
+    selection: revivableSelection(restoreSel, prev, evalResult),
     pending: null,
   });
   scheduleAutosave();
@@ -267,14 +299,17 @@ export function redo() {
   }
   const future = s.history.future.slice();
   const next = future.shift()!;
+  const futureSel = s.history.futureSel.slice();
+  const restoreSel = futureSel.shift();
   const past = [...s.history.past, deepClone(s.doc)].slice(-80);
+  const pastSel = [...s.history.pastSel, s.selection].slice(-80);
   const evalResult = evaluate(next);
   store.set({
     doc: next,
     evalResult,
     geometryVersion: s.geometryVersion + 1,
-    history: { past, future },
-    selection: [],
+    history: { past, future, pastSel, futureSel },
+    selection: revivableSelection(restoreSel, next, evalResult),
     pending: null,
   });
   scheduleAutosave();
@@ -618,7 +653,12 @@ export function confirmPending() {
     doc,
     evalResult,
     geometryVersion: store.state.geometryVersion + 1,
-    history: { past, future: [] },
+    history: {
+      past,
+      future: [],
+      pastSel: [...store.state.history.pastSel, store.state.selection].slice(-80),
+      futureSel: [],
+    },
     pending: null,
     selection: [],
     visibleSketchIds: consumed
@@ -641,7 +681,7 @@ export async function createProject() {
     doc,
     evalResult,
     geometryVersion: store.state.geometryVersion + 1,
-    history: { past: [], future: [] },
+    history: { past: [], future: [], pastSel: [], futureSel: [] },
     selection: [],
     mode: 'select',
     activeSketchId: null,
@@ -665,7 +705,7 @@ export async function openProject(id: string) {
     doc,
     evalResult,
     geometryVersion: store.state.geometryVersion + 1,
-    history: { past: [], future: [] },
+    history: { past: [], future: [], pastSel: [], futureSel: [] },
     selection: [],
     mode: 'select',
     activeSketchId: null,

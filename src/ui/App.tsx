@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Viewport } from '../render/Viewport';
 import { viewportRef } from '../render/viewportRef';
 import { InteractionController } from '../input/controller';
@@ -7,6 +7,8 @@ import * as OPS from '../state/ops';
 import { EmptyHint, Rail, StatusRight, Toast, TopBar, ViewCubeOverlay } from './Bars';
 import { PendingChip, SketchDimensionChip } from './Chips';
 import { SelectionGizmo } from './Gizmos';
+import { SketchBadges } from './SketchBadges';
+import { sketchDiagnostics } from '../sketch/diagnostics';
 import { FeaturePanel, HelpPanel, MeasurePanel, ProjectsPanel } from './Panels';
 
 export default function App() {
@@ -62,10 +64,24 @@ export default function App() {
     (sk) => s.visibleSketchIds.includes(sk.id) || sk.id === s.activeSketchId,
   );
 
+  // Constraint state of the sketch being edited: drives the colour of the
+  // geometry, the open-end markers and the status readout.
+  const activeSketch = s.doc.sketches.find((sk) => sk.id === s.activeSketchId) ?? null;
+  const diag = useMemo(
+    () => (activeSketch ? sketchDiagnostics(activeSketch) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeSketch?.id, s.geometryVersion],
+  );
+
   useEffect(() => {
     const selectedEntity = s.selection.find((x) => x.kind === 'sketchEntity')?.entityId ?? null;
-    viewportRef.current?.setSketch(visibleSketches, s.activeSketchId, selectedEntity);
-  }, [s.doc.sketches, s.activeSketchId, s.visibleSketchIds, s.selection]);
+    viewportRef.current?.setSketch(
+      visibleSketches,
+      s.activeSketchId,
+      selectedEntity,
+      diag ? { fullyDefined: diag.fullyDefined, open: diag.open.map((o) => o.p) } : null,
+    );
+  }, [s.doc.sketches, s.activeSketchId, s.visibleSketchIds, s.selection, diag]);
 
   useEffect(() => {
     viewportRef.current?.setGridVisible(s.showGrid);
@@ -111,9 +127,25 @@ export default function App() {
         return;
       }
       if (e.key === 'Escape') {
+        // Escape unwinds one level at a time, the way Shapr3D does: cancel the
+        // operation, then the panel, then the drawing tool, then the selection.
         controllerRef.current?.cancel();
-        S.setSelection([]);
-        S.store.set({ panel: 'none' });
+        if (state.pending) {
+          S.cancelPending();
+          return;
+        }
+        if (state.panel !== 'none') {
+          S.store.set({ panel: 'none' });
+          return;
+        }
+        if (state.mode === 'sketch' && state.sketchTool !== 'select') {
+          S.store.set({ sketchTool: 'select', selection: [] });
+          return;
+        }
+        if (state.selection.length) {
+          S.setSelection([]);
+          return;
+        }
         return;
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -195,9 +227,10 @@ export default function App() {
         <TopBar />
         <Rail />
         <ViewCubeOverlay />
-        <StatusRight />
+        <StatusRight diag={diag} />
         <EmptyHint />
         <SelectionGizmo />
+        <SketchBadges />
         <PendingChip />
         <SketchDimensionChip />
         <Toast />

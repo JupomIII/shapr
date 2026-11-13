@@ -21,6 +21,23 @@ Modelled on Shapr3D and SolidWorks, so the next action is always at the geometry
 A selected **face** gets the same arrow for offset / push-pull, a selected **edge** gets a fillet
 handle, and the left dock mirrors those actions for anyone who prefers buttons.
 
+## Sketch feedback
+
+A sketch tells you what it is before you leave it, the way Shapr3D does:
+
+- **Blue geometry** is still under-defined, **green** means the solver has locked every degree of
+  freedom. Both come from an actual solve, not from a guess.
+- **Orange dots** mark open ends — the points used by a single entity, i.e. exactly where the
+  profile is still broken.
+- The status bar shows degrees of freedom, closed profile count and open ends while sketching.
+- Selecting an element shows its **constraint badges** (H, V, ⟂, ∥, =, ◎, T, ↺, ◉, dimensions).
+  Tapping a badge deletes that constraint and re-solves, which is the quickest way out of an
+  over-constrained sketch.
+- **Repeated taps** on the same spot cycle through what is stacked there (edge → face → body →
+  profile), so overlapping geometry does not force a zoom.
+- **Undo/redo restores the selection** that was active before the step, not just the geometry.
+- **Escape** unwinds one level at a time: operation → panel → drawing tool → selection.
+
 ## What is implemented
 
 **Workspace / interaction**
