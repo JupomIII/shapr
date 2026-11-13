@@ -36,6 +36,8 @@ type Target = {
 
 function targetOf(): Target | null {
   const s = S.store.state;
+  // The stacked-selection list owns the interaction while it is open.
+  if (s.picker) return null;
   // While a feature is pending the arrow stays put and keeps driving its value.
   const sel = s.selection[0];
   if (!sel) return null;

@@ -886,6 +886,12 @@ export function HelpPanel() {
           <span className="desc">Focus the camera on a face</span>
         </div>
         <div className="help-row">
+          <span className="keys">Stacked items</span>
+          <span className="desc">
+            A tap over several items (profile, edge, face, body) opens a Select list to pick one
+          </span>
+        </div>
+        <div className="help-row">
           <span className="keys">3-finger swipe</span>
           <span className="desc">Left: undo — Right: redo</span>
         </div>

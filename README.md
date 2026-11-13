@@ -33,8 +33,11 @@ A sketch tells you what it is before you leave it, the way Shapr3D does:
 - Selecting an element shows its **constraint badges** (H, V, ⟂, ∥, =, ◎, T, ↺, ◉, dimensions).
   Tapping a badge deletes that constraint and re-solves, which is the quickest way out of an
   over-constrained sketch.
-- **Repeated taps** on the same spot cycle through what is stacked there (edge → face → body →
-  profile), so overlapping geometry does not force a zoom.
+- **Everything stacked under one tap is listed**, the way Shapr3D resolves overlapping geometry: a
+  tap that hits a profile, an edge, a face and the body behind it opens a short **Select** list
+  (Profile / Edge / Face / Body) with a name or size on each row. Hovering a row highlights that
+  item in the viewport, the current selection is check-marked, and one tap commits the exact target.
+  A tap with a single candidate selects it straight away, with no list.
 - **Undo/redo restores the selection** that was active before the step, not just the geometry.
 - **Escape** unwinds one level at a time: operation → panel → drawing tool → selection.
 

@@ -79,8 +79,6 @@ export class InteractionController {
   private chain: Vec2 | null = null;
   private box: { start: { x: number; y: number }; el: HTMLDivElement } | null = null;
   private orbitDrag: { x: number; y: number } | null = null;
-  /** Repeated taps on the same spot cycle through what is stacked there. */
-  private lastPick: { x: number; y: number; t: number; i: number } | null = null;
   private lastPendingAt = 0;
   private hoverRaf = 0;
   private lastHover: { x: number; y: number } | null = null;
@@ -262,6 +260,8 @@ export class InteractionController {
 
   private handleTap(p: PointerSample) {
     const s = S.store.state;
+    // A tap anywhere dismisses the stacked-selection list first.
+    if (s.picker) S.store.set({ picker: null });
     if (s.pending) {
       // Shapr3D finishes an operation when you tap empty space, so the check
       // lives on the geometry rather than in a toolbar.
@@ -287,13 +287,17 @@ export class InteractionController {
       }
       return;
     }
-    // Select mode: resolve by proximity so finger taps work too. Everything
-    // stacked under the pointer becomes a candidate, and tapping the same spot
-    // again steps to the next one instead of forcing a zoom-in.
+    // Select mode: resolve by proximity so finger taps work too. When several
+    // items are stacked under the pointer, list them (Shapr3D's overlapping
+    // list) instead of guessing or making the user tap repeatedly.
     const edge = this.vp.pickEdge(p.x, p.y);
     const face = this.vp.pickFace(p.x, p.y);
     const region = this.pickRegion(p.x, p.y);
+
+    // Same precedence as pointer-down selection (profile, edge, face, body), so
+    // the first row is the item the tap already picked.
     const candidates: SelectionItem[] = [];
+    if (region) candidates.push(region);
     if (edge) candidates.push({ kind: 'edge', bodyId: edge.bodyId, edgeKey: edge.edge.key });
     if (face)
       candidates.push({
@@ -303,21 +307,51 @@ export class InteractionController {
         point: face.point,
       });
     if (face) candidates.push({ kind: 'body', bodyId: face.bodyId });
-    if (region) candidates.push(region);
 
     if (!candidates.length) {
-      this.lastPick = null;
       S.selectItem(null);
       return;
     }
+    if (candidates.length === 1) {
+      S.selectItem(candidates[0]);
+      return;
+    }
 
-    const now = performance.now();
-    const last = this.lastPick;
-    const repeat =
-      !!last && now - last.t < 1200 && Math.hypot(p.x - last.x, p.y - last.y) < 26;
-    const index = repeat ? (last!.i + 1) % candidates.length : 0;
-    this.lastPick = { x: p.x, y: p.y, t: now, i: index };
-    S.selectItem(candidates[index]);
+    const bodyName = (id?: string) =>
+      s.evalResult.bodies.find((b) => b.id === id)?.name ?? 'Body';
+    const sketchName = (id?: string) =>
+      s.doc.sketches.find((sk) => sk.id === id)?.name ?? 'Sketch';
+    const entries = candidates.map((item, i) => {
+      if (item.kind === 'edge') {
+        const len = edge ? Math.hypot(
+          edge.edge.b[0] - edge.edge.a[0],
+          edge.edge.b[1] - edge.edge.a[1],
+          edge.edge.b[2] - edge.edge.a[2],
+        ) : 0;
+        return {
+          id: `edge_${i}`,
+          label: 'Edge',
+          hint: `${len.toFixed(1)} mm`,
+          item,
+        };
+      }
+      if (item.kind === 'face') {
+        return { id: `face_${i}`, label: 'Face', hint: bodyName(item.bodyId), item };
+      }
+      if (item.kind === 'body') {
+        return { id: `body_${i}`, label: 'Body', hint: bodyName(item.bodyId), item };
+      }
+      return {
+        id: `region_${i}`,
+        label: 'Profile',
+        hint: sketchName(item.sketchId),
+        item,
+      };
+    });
+
+    // Show what the finger is actually on while the list is open.
+    S.setHover(entries[0].item);
+    S.store.set({ picker: { x: p.x, y: p.y, entries } });
   }
 
   private handleDoubleTap(p: PointerSample) {

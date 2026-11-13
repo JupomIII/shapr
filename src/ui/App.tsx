@@ -8,6 +8,7 @@ import { EmptyHint, Rail, StatusRight, Toast, TopBar, ViewCubeOverlay } from './
 import { PendingChip, SketchDimensionChip } from './Chips';
 import { SelectionGizmo } from './Gizmos';
 import { SketchBadges } from './SketchBadges';
+import { SelectionPicker } from './SelectionPicker';
 import { sketchDiagnostics } from '../sketch/diagnostics';
 import { FeaturePanel, HelpPanel, MeasurePanel, ProjectsPanel } from './Panels';
 
@@ -128,8 +129,13 @@ export default function App() {
       }
       if (e.key === 'Escape') {
         // Escape unwinds one level at a time, the way Shapr3D does: cancel the
-        // operation, then the panel, then the drawing tool, then the selection.
+        // operation, then the picker, then the panel, then the tool, then the
+        // selection.
         controllerRef.current?.cancel();
+        if (state.picker) {
+          S.store.set({ picker: null });
+          return;
+        }
         if (state.pending) {
           S.cancelPending();
           return;
@@ -241,6 +247,7 @@ export default function App() {
         <EmptyHint />
         <SelectionGizmo />
         <SketchBadges />
+        <SelectionPicker />
         <PendingChip />
         <SketchDimensionChip />
         <Toast />

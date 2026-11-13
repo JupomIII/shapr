@@ -53,6 +53,20 @@ export interface SelectionItem {
   normal?: Vec3;
 }
 
+/** One row of the stacked-selection picker (Shapr3D's overlapping list). */
+export interface PickEntry {
+  id: string;
+  label: string;
+  hint?: string;
+  item: SelectionItem;
+}
+
+export interface PickerState {
+  x: number;
+  y: number;
+  entries: PickEntry[];
+}
+
 export type PendingKind = 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'pushpull';
 
 export interface PendingOp {
@@ -79,6 +93,8 @@ export interface AppState {
   visibleSketchIds: string[];
   selection: SelectionItem[];
   hover: SelectionItem | null;
+  /** Open when a tap hits several stacked items; null otherwise. */
+  picker: PickerState | null;
   /** Documents plus the selection each step started from, so undo restores both. */
   history: {
     past: ProjectDoc[];
@@ -119,6 +135,7 @@ export const store = {
     visibleSketchIds: [] as string[],
     selection: [] as SelectionItem[],
     hover: null,
+    picker: null as PickerState | null,
     history: {
       past: [] as ProjectDoc[],
       future: [] as ProjectDoc[],
