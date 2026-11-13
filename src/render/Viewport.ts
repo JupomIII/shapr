@@ -631,7 +631,7 @@ export class Viewport {
 
   orbit(dxPx: number, dyPx: number) {
     this.cam.theta -= dxPx * 0.007;
-    this.cam.phi = Math.min(Math.PI - 0.02, Math.max(0.02, this.cam.phi - dyPx * 0.007));
+    this.cam.phi = Math.min(Math.PI - 0.02, Math.max(0.02, this.cam.phi - dyPx * 0.005));
     this.anim = null;
     this.dirty = true;
   }

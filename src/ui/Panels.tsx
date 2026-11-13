@@ -845,6 +845,23 @@ export function HelpPanel() {
           <span className="keys">3-finger swipe</span>
           <span className="desc">Left: undo — Right: redo</span>
         </div>
+        <div className="panel-section-title">Mouse & trackpad</div>
+        <div className="help-row">
+          <span className="keys">Drag empty space</span>
+          <span className="desc">Orbit the camera</span>
+        </div>
+        <div className="help-row">
+          <span className="keys">Right-drag</span>
+          <span className="desc">Pan</span>
+        </div>
+        <div className="help-row">
+          <span className="keys">Scroll / pinch</span>
+          <span className="desc">Zoom</span>
+        </div>
+        <div className="help-row">
+          <span className="keys">Option / middle drag</span>
+          <span className="desc">Orbit from anywhere, including over geometry</span>
+        </div>
         <div className="panel-section-title">Keyboard</div>
         <div className="help-row">
           <span className="keys">

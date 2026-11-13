@@ -78,6 +78,7 @@ export class InteractionController {
   private drag: DragCtx | null = null;
   private chain: Vec2 | null = null;
   private box: { start: { x: number; y: number }; el: HTMLDivElement } | null = null;
+  private orbitDrag: { x: number; y: number } | null = null;
   private lastPendingAt = 0;
   private hoverRaf = 0;
   private lastHover: { x: number; y: number } | null = null;
@@ -121,6 +122,7 @@ export class InteractionController {
   cancel() {
     this.stroke = null;
     this.drag = null;
+    this.orbitDrag = null;
     this.vp.setDraft(null);
     this.endBox();
     if (S.store.state.pending) S.cancelPending();
@@ -144,12 +146,22 @@ export class InteractionController {
       this.sketchMove(p, e);
       return;
     }
+    if (this.orbitDrag) {
+      const dx = p.x - this.orbitDrag.x;
+      const dy = p.y - this.orbitDrag.y;
+      if (dx || dy) {
+        this.orbitDrag = { x: p.x, y: p.y };
+        this.vp.orbit(dx, dy);
+      }
+      return;
+    }
     if (this.drag) this.dragMove(p);
   }
 
   private primaryUp(p: PointerSample) {
     if (this.stroke) this.commitStroke();
     this.drag = null;
+    this.orbitDrag = null;
     this.vp.setDraft(null);
   }
 
@@ -193,6 +205,9 @@ export class InteractionController {
       return;
     }
     S.selectItem(null);
+    // Dragging empty space orbits, like a finger drag on the iPad. A click that
+    // never moves still just deselects.
+    if (p.kind === 'mouse') this.orbitDrag = { x: p.x, y: p.y };
   }
 
   private pickRegion(x: number, y: number): SelectionItem | null {

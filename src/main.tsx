@@ -6,6 +6,7 @@ import * as ops from './state/ops';
 import * as create from './sketch/create';
 import * as geometry from './sketch/geometry';
 import * as exporters from './kernel/exporters';
+import { viewportRef } from './render/viewportRef';
 
 const root = createRoot(document.getElementById('root')!);
 root.render(<App />);
@@ -18,6 +19,7 @@ if (import.meta.env.DEV) {
     create,
     geometry,
     exporters,
+    vp: viewportRef,
   };
 }
 
