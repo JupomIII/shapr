@@ -397,14 +397,15 @@ export function finishSketch() {
       label: 'sketch:discard',
     });
   }
-  // Used sketches are hidden once finished; the feature tree can show them again.
+  // A finished sketch stays visible so its profiles can still be picked and dragged;
+  // it is only hidden once a solid feature consumes it.
   store.set({
     mode: 'select',
     activeSketchId: null,
     sketchTool: 'select',
     selection: [],
     visibleSketchIds: sk
-      ? store.state.visibleSketchIds.filter((id) => id !== sk.id)
+      ? Array.from(new Set([...store.state.visibleSketchIds, sk.id]))
       : store.state.visibleSketchIds,
   });
 }
@@ -457,6 +458,17 @@ export function updateFeature(id: string, patch: Partial<Feature>) {
 export function toggleFeatureHidden(id: string) {
   const f = store.state.doc.features.find((x) => x.id === id);
   if (!f) return;
+  if (f.kind === 'sketch') {
+    // Sketch visibility lives in the view state, not only on the feature.
+    const shown = store.state.visibleSketchIds.includes(f.sketchId);
+    store.set({
+      visibleSketchIds: shown
+        ? store.state.visibleSketchIds.filter((x) => x !== f.sketchId)
+        : [...store.state.visibleSketchIds, f.sketchId],
+    });
+    updateFeature(id, { hidden: shown } as Partial<Feature>);
+    return;
+  }
   updateFeature(id, { hidden: !f.hidden } as Partial<Feature>);
 }
 
@@ -585,6 +597,17 @@ export function confirmPending() {
   doc.features.push(feature);
   const evalResult = evaluate(doc);
   const past = [...store.state.history.past, deepClone(store.state.doc)].slice(-80);
+  // The profile has become solid geometry: hide its sketch to keep the view clean.
+  const consumed =
+    (feature.kind === 'extrude' || feature.kind === 'revolve') && 'sketchId' in feature
+      ? feature.sketchId
+      : null;
+  if (consumed) {
+    const sketchFeature = doc.features.find(
+      (f) => f.kind === 'sketch' && f.sketchId === consumed,
+    );
+    if (sketchFeature) sketchFeature.hidden = true;
+  }
   store.set({
     doc,
     evalResult,
@@ -592,6 +615,9 @@ export function confirmPending() {
     history: { past, future: [] },
     pending: null,
     selection: [],
+    visibleSketchIds: consumed
+      ? store.state.visibleSketchIds.filter((id) => id !== consumed)
+      : store.state.visibleSketchIds,
   });
   scheduleAutosave();
 }
