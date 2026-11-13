@@ -271,19 +271,23 @@ function FeatureFields({ f }: { f: Feature }) {
   }
 }
 
-export function FeaturePanel() {
+export function FeaturePanel({ dock = false }: { dock?: boolean }) {
   const s = S.useApp();
   const [editing, setEditing] = useState<string | null>(null);
   const rollback = s.doc.rollback ?? null;
 
   return (
-    <div className="panel">
+    <div className={dock ? 'panel feature-dock' : 'panel'}>
       <div className="panel-head">
         <span>
-          Feature tree <span className="sub">{s.doc.features.length} features</span>
+          Features <span className="sub">{s.doc.features.length}</span>
         </span>
-        <button className="icon-btn" onClick={() => S.store.set({ panel: 'none' })}>
-          <Icon name="close" size={16} />
+        <button
+          className="icon-btn"
+          title={dock ? 'Hide the feature tree (H)' : 'Close'}
+          onClick={() => (dock ? S.store.set({ featuresOpen: false }) : S.store.set({ panel: 'none' }))}
+        >
+          <Icon name={dock ? 'chevron' : 'close'} size={16} />
         </button>
       </div>
       <div className="panel-body">

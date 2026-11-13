@@ -152,12 +152,12 @@ export function TopBar() {
             <button
               className="menu-row"
               onClick={() => {
-                togglePanel('features');
+                S.store.set({ featuresOpen: !s.featuresOpen });
                 setMenu(false);
               }}
             >
               <Icon name="layers" size={15} />
-              History
+              {s.featuresOpen ? 'Hide feature tree' : 'Show feature tree'}
               <span className="k">H</span>
             </button>
             <button
@@ -352,9 +352,9 @@ export function Rail() {
         />
         <Act
           icon="layers"
-          label="History"
-          active={s.panel === 'features'}
-          onClick={() => S.store.set({ panel: s.panel === 'features' ? 'none' : 'features' })}
+          label="Features"
+          active={s.featuresOpen}
+          onClick={() => S.store.set({ featuresOpen: !s.featuresOpen })}
         />
       </div>
       {planeMenu && (
@@ -491,17 +491,6 @@ export function ViewCubeOverlay() {
           <Icon name="settings" size={16} />
         </button>
       </div>
-
-      {s.panel !== 'features' && (
-        <button
-          className="dock-label"
-          title="Feature history"
-          onClick={() => S.store.set({ panel: 'features' })}
-        >
-          <Icon name="history" size={15} />
-          History
-        </button>
-      )}
 
       {unitsOpen && (
         <>

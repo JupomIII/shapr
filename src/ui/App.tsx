@@ -204,7 +204,7 @@ export default function App() {
           S.store.set({ showGrid: !state.showGrid });
           break;
         case 'h':
-          S.store.set({ panel: state.panel === 'features' ? 'none' : 'features' });
+          S.store.set({ featuresOpen: !state.featuresOpen });
           break;
         case '1':
           viewportRef.current?.setView('front', state.evalResult.bodies);
@@ -254,7 +254,17 @@ export default function App() {
         <PendingChip />
         <SketchDimensionChip />
         <Toast />
-        {s.panel === 'features' && <FeaturePanel />}
+        {s.featuresOpen ? (
+          <FeaturePanel dock />
+        ) : (
+          <button
+            className="feature-tab"
+            title="Show the feature tree (H)"
+            onClick={() => S.store.set({ featuresOpen: true })}
+          >
+            Features
+          </button>
+        )}
         {s.panel === 'projects' && <ProjectsPanel />}
         {s.panel === 'measure' && <MeasurePanel />}
         {s.panel === 'help' && <HelpPanel />}

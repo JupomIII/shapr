@@ -39,7 +39,7 @@ export type SketchTool =
   | 'spline'
   | 'auto'
   | 'dimension';
-export type Panel = 'none' | 'projects' | 'features' | 'measure' | 'help';
+export type Panel = 'none' | 'projects' | 'measure' | 'help';
 
 export interface SelectionItem {
   kind: 'face' | 'edge' | 'body' | 'region' | 'sketchEntity' | 'sketch';
@@ -103,6 +103,8 @@ export interface AppState {
     futureSel: SelectionItem[][];
   };
   panel: Panel;
+  /** The feature tree lives in a standing panel, so it is not a transient panel. */
+  featuresOpen: boolean;
   pending: PendingOp | null;
   toast: { id: number; text: string } | null;
   autoLineArc: boolean;
@@ -143,6 +145,7 @@ export const store = {
       futureSel: [] as SelectionItem[][],
     },
     panel: 'none' as Panel,
+    featuresOpen: true,
     pending: null,
     toast: null,
     autoLineArc: true,
