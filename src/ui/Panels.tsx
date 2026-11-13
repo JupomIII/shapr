@@ -18,6 +18,7 @@ import * as OPS from '../state/ops';
 import { Feature, UNIT_FACTOR, UnitSystem, fromDisplay, toDisplay } from '../model/types';
 import { Icon, IconName } from './Icons';
 import { fmtNum } from './Chips';
+import { PenButton, PenSpan } from './penTap';
 
 const NumField = ({
   label,
@@ -282,13 +283,13 @@ export function FeaturePanel({ dock = false }: { dock?: boolean }) {
         <span>
           Features <span className="sub">{s.doc.features.length}</span>
         </span>
-        <button
+        <PenButton
           className="icon-btn"
           title={dock ? 'Hide the feature tree (H)' : 'Close'}
-          onClick={() => (dock ? S.store.set({ featuresOpen: false }) : S.store.set({ panel: 'none' }))}
+          onPress={() => (dock ? S.store.set({ featuresOpen: false }) : S.store.set({ panel: 'none' }))}
         >
           <Icon name={dock ? 'chevron' : 'close'} size={16} />
-        </button>
+        </PenButton>
       </div>
       <div className="panel-body">
         {s.doc.features.length === 0 && (
@@ -299,10 +300,10 @@ export function FeaturePanel({ dock = false }: { dock?: boolean }) {
           const rolledBack = rollback !== null && i >= rollback;
           return (
             <div key={f.id}>
-              <button
+              <PenButton
                 className={`row ${editing === f.id ? 'selected' : ''}`}
                 style={{ opacity: rolledBack ? 0.45 : 1 }}
-                onClick={() => {
+                onPress={() => {
                   if (f.kind === 'sketch') {
                     S.store.set({
                       mode: 'sketch',
@@ -321,29 +322,21 @@ export function FeaturePanel({ dock = false }: { dock?: boolean }) {
                 <span className="name">{f.name}</span>
                 {err ? <span className="error-dot" title={err} /> : null}
                 <span className="meta">{featureMeta(f)}</span>
-                <span
+                <PenSpan
                   className={`mini ${f.hidden ? '' : 'on'}`}
-                  role="button"
                   title={f.hidden ? 'Show' : 'Hide'}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    S.toggleFeatureHidden(f.id);
-                  }}
+                  onPress={() => S.toggleFeatureHidden(f.id)}
                 >
                   <Icon name={f.hidden ? 'eyeOff' : 'eye'} size={14} />
-                </span>
-                <span
+                </PenSpan>
+                <PenSpan
                   className="mini"
-                  role="button"
                   title="Delete feature"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    S.deleteFeature(f.id);
-                  }}
+                  onPress={() => S.deleteFeature(f.id)}
                 >
                   <Icon name="trash" size={14} />
-                </span>
-              </button>
+                </PenSpan>
+              </PenButton>
               {err ? (
                 <div className="hint-text" style={{ color: '#e08d86', paddingTop: 0 }}>
                   {err}
@@ -366,38 +359,35 @@ export function FeaturePanel({ dock = false }: { dock?: boolean }) {
         })}
 
         {rollback !== null && (
-          <button className="row" onClick={() => S.setRollback(null)}>
+          <PenButton className="row" onPress={() => S.setRollback(null)}>
             <span className="tree-icon">
               <Icon name="rollback" size={15} />
             </span>
             <span className="name">Rollback active — resume all</span>
-          </button>
+          </PenButton>
         )}
 
         <div className="panel-section-title">Bodies</div>
         {s.evalResult.bodies.length === 0 && <div className="hint-text">No solid bodies yet.</div>}
         {s.evalResult.bodies.map((b) => (
-          <button
+          <PenButton
             key={b.id}
             className={`row ${s.selection.some((x) => x.bodyId === b.id && x.kind === 'body') ? 'selected' : ''}`}
-            onClick={() => S.setSelection([{ kind: 'body', bodyId: b.id }])}
+            onPress={() => S.setSelection([{ kind: 'body', bodyId: b.id }])}
           >
             <span className="tree-icon">
               <Icon name="cube" size={15} />
             </span>
             <span className="name">{b.name}</span>
             <span className="meta">{volText(b.measure.volume)}</span>
-            <span
+            <PenSpan
               className={`mini ${b.hidden ? '' : 'on'}`}
-              role="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                S.toggleFeatureHidden(b.featureId);
-              }}
+              title={b.hidden ? 'Show' : 'Hide'}
+              onPress={() => S.toggleFeatureHidden(b.featureId)}
             >
               <Icon name={b.hidden ? 'eyeOff' : 'eye'} size={14} />
-            </span>
-          </button>
+            </PenSpan>
+          </PenButton>
         ))}
       </div>
     </div>

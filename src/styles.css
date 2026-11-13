@@ -1713,3 +1713,51 @@ textarea {
   color: var(--t1);
   border-color: var(--accent);
 }
+
+/* ---------------------- feature tree, Apple Pencil friendly ---------------- */
+/* A pencil tip is precise but the dock is small: rows and their icon targets get
+   a finger/pencil sized hit area, and `touch-action: manipulation` keeps a tap
+   from being read as the start of a pan on the scrollable body. */
+.feature-dock,
+.feature-tab,
+.feature-dock .row {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.feature-dock .panel-body {
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.feature-dock .row {
+  min-height: 42px;
+  padding: 6px 6px 6px 8px;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.feature-dock .row .name {
+  font-size: 13px;
+}
+
+.feature-dock .mini {
+  width: 30px;
+  height: 30px;
+  opacity: 0.45;
+}
+
+.feature-dock .mini.on,
+.feature-dock .mini:hover {
+  opacity: 1;
+}
+
+.feature-dock .row:active {
+  background: rgba(10, 132, 255, 0.22);
+}
+
+.feature-dock .mini:active {
+  background: rgba(10, 132, 255, 0.32);
+  color: #fff;
+}

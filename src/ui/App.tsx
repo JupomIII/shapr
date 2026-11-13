@@ -12,6 +12,7 @@ import { SelectionPicker } from './SelectionPicker';
 import { SketchConstraints } from './SketchConstraints';
 import { sketchDiagnostics } from '../sketch/diagnostics';
 import { FeaturePanel, HelpPanel, MeasurePanel, ProjectsPanel } from './Panels';
+import { PenButton } from './penTap';
 
 export default function App() {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -257,13 +258,13 @@ export default function App() {
         {s.featuresOpen ? (
           <FeaturePanel dock />
         ) : (
-          <button
+          <PenButton
             className="feature-tab"
             title="Show the feature tree (H)"
-            onClick={() => S.store.set({ featuresOpen: true })}
+            onPress={() => S.store.set({ featuresOpen: true })}
           >
             Features
-          </button>
+          </PenButton>
         )}
         {s.panel === 'projects' && <ProjectsPanel />}
         {s.panel === 'measure' && <MeasurePanel />}
