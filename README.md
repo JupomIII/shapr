@@ -172,9 +172,12 @@ node tmp/k.mjs
 
 ### GitHub Pages
 
-`.github/workflows/deploy.yml` builds on push to `main` and deploys `dist` via the Pages actions.
-Enable Pages → Source: GitHub Actions. The build uses `base: './'`, so no repository-name
-configuration is needed.
+Live at **https://jupomiii.github.io/shapr/** — open it in Safari on the iPad and use Share →
+“Add to Home Screen” to install it as a standalone, offline-capable app.
+
+`.github/workflows/deploy.yml` builds on push to `main` and deploys `dist` via the Pages actions
+(Pages → Source: GitHub Actions). The build uses `base: './'`, so no repository-name configuration
+is needed.
 
 ## Verification performed
 
