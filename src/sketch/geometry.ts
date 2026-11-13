@@ -251,7 +251,11 @@ export function sketchLoops(sk: Sketch): Vec2[][] {
   return unique;
 }
 
-export function buildRegions(loops: Vec2[][]): Region2[] {
+export function buildRegions(input: Vec2[][]): Region2[] {
+  // A loop with no area is not a profile. Collapsed geometry (two coincident
+  // corners, a retraced line) used to be handed to the modelling tools, which
+  // then failed with "produced no solid".
+  const loops = input.filter((l) => l.length >= 3 && Math.abs(signedArea2(l)) > 1e-4);
   if (!loops.length) return [];
   const areas = loops.map((l) => Math.abs(signedArea2(l)));
   const depth = loops.map((l, i) => {
