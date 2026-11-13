@@ -7,6 +7,20 @@ Open it on an iPad, pick up the Apple Pencil, sketch on a plane, and drag the pr
 Everything below runs locally: the geometry kernel, the constraint solver, the feature tree and
 project storage.
 
+## The modelling workflow
+
+Modelled on Shapr3D and SolidWorks, so the next action is always at the geometry:
+
+1. **Sketch** → tap a plane or a flat face. The camera turns to meet the plane.
+2. Draw a closed shape, then **Finish sketch**.
+3. The finished profile stays selected and grows an **arrow on the profile**.
+4. **Drag the arrow** for a live extrusion, or **tap it** to open the value field and type a number.
+   The dimension chip next to it edits the same feature semantically (−, value, +, ✓, ✕).
+5. **Tap empty space** to confirm — the feature lands in the history and stays editable.
+
+A selected **face** gets the same arrow for offset / push-pull, a selected **edge** gets a fillet
+handle, and the left dock mirrors those actions for anyone who prefers buttons.
+
 ## What is implemented
 
 **Workspace / interaction**
