@@ -155,6 +155,16 @@ export default function App() {
       }
       if (meta) return;
 
+      // Typing a number right after drawing sets that dimension (Onshape).
+      if (state.mode === 'sketch' && /^[0-9.,]$/.test(e.key)) {
+        const hasEntity = state.selection.some((x) => x.kind === 'sketchEntity');
+        if (hasEntity) {
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent('shapr:dimension', { detail: { seed: e.key } }));
+          return;
+        }
+      }
+
       switch (e.key.toLowerCase()) {
         case 'v':
           if (state.mode === 'sketch') S.store.set({ sketchTool: 'select' });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Vec2, Vec3 } from '../kernel/vec';
 import { arcGeom } from '../sketch/geometry';
 import { to3D } from '../kernel/ops';
@@ -104,6 +104,7 @@ export function SketchDimensionChip() {
   const sel = s.selection[0];
   const [text, setText] = useState('');
   const [focused, setFocused] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const sk = s.doc.sketches.find((x) => x.id === sel?.sketchId) ?? null;
   const e = sk?.entities.find((x) => x.id === sel?.entityId) ?? null;
@@ -156,6 +157,25 @@ export function SketchDimensionChip() {
     if (!focused) setText(fmtNum(toDisplay(value, units), 2));
   }, [value, valid, focused, e?.id, units]);
 
+  // Type-to-dimension: while sketching, pressing a digit right after drawing
+  // seeds this field, the way Onshape accepts a value straight after a stroke.
+  useEffect(() => {
+    const onType = (ev: Event) => {
+      const seed = (ev as CustomEvent<{ seed: string }>).detail?.seed;
+      if (!valid || seed == null) return;
+      // Focus before the state update so React keeps the focused node.
+      const el = inputRef.current;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+      }
+      setText(seed);
+      setFocused(true);
+    };
+    window.addEventListener('shapr:dimension', onType);
+    return () => window.removeEventListener('shapr:dimension', onType);
+  }, [valid, e?.id]);
+
   if (!valid || !sk || !e) return null;
 
   const apply = () => {
@@ -186,6 +206,7 @@ export function SketchDimensionChip() {
     >
       <span className="chip-title">{label}</span>
       <input
+        ref={inputRef}
         value={text}
         inputMode="decimal"
         onChange={(ev) => setText(ev.target.value)}
