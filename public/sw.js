@@ -1,6 +1,6 @@
 // Offline application shell. Cache-first for same-origin GETs; navigation
 // falls back to the cached shell so the app opens without a network.
-const CACHE = 'shapr-cache-v1';
+const CACHE = 'shapr-cache-v2';
 const CORE = ['./', './index.html', './manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
@@ -27,7 +27,8 @@ self.addEventListener('fetch', (event) => {
 
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req)
+      // Bypass the HTTP cache so a new deployment is picked up on the next visit.
+      fetch(new Request(req.url, { cache: 'no-store', credentials: 'same-origin' }))
         .then((res) => {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(req, copy));
