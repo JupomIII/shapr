@@ -110,6 +110,7 @@ export class InteractionController {
       },
       onZoom: (factor) => this.vp.zoom(factor),
       isPenActive: () => this.gesture.penActive(),
+      onTouchModel: (p) => this.touchStartsModel(p),
     });
     this.gesture.attach(vp.domElement);
   }
@@ -208,6 +209,25 @@ export class InteractionController {
     // Dragging empty space orbits, like a finger drag on the iPad. A click that
     // never moves still just deselects.
     if (p.kind === 'mouse') this.orbitDrag = { x: p.x, y: p.y };
+  }
+
+  /**
+   * Single-finger contacts model instead of orbiting when there is no pen in the
+   * session: drawing in a sketch, or touching geometry in the model.
+   */
+  private touchStartsModel(p: PointerSample): boolean {
+    const s = S.store.state;
+    if (this.gesture.hasPen()) return false;
+    if (s.pending) return false;
+    if (s.mode === 'sketch') {
+      const sk = S.activeSketch();
+      return !!sk && s.sketchTool !== 'select';
+    }
+    if (s.mode !== 'select') return false;
+    if (this.pickRegion(p.x, p.y)) return true;
+    // Edges select on tap but have no drag action, so a drag there still orbits.
+    if (this.vp.pickEdge(p.x, p.y)) return false;
+    return !!this.vp.pickFace(p.x, p.y);
   }
 
   private pickRegion(x: number, y: number): SelectionItem | null {

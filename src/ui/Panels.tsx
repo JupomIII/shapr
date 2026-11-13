@@ -827,7 +827,10 @@ export function HelpPanel() {
         <div className="panel-section-title">Fingers</div>
         <div className="help-row">
           <span className="keys">1 finger drag</span>
-          <span className="desc">Orbit the camera (draws when a sketch tool is active)</span>
+          <span className="desc">
+            Orbit on empty space. Without a Pencil, it draws in a sketch and drags faces and
+            profiles directly.
+          </span>
         </div>
         <div className="help-row">
           <span className="keys">2 fingers</span>

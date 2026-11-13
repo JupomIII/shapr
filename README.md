@@ -15,6 +15,9 @@ project storage.
   grid, axes, view cube and animated view presets.
 - Explicit input split: Apple Pencil / mouse build geometry, fingers navigate. A pen stroke can
   never turn into a camera gesture and a finger drag never creates geometry.
+- **Finger-only fallback**: until a pen is used in the session, a single finger draws in a sketch and
+  drags profiles and faces directly; empty space still orbits and two fingers still pan, zoom and
+  twist. As soon as a Pencil touches the screen, fingers go back to navigation only.
 - Gestures: 1-finger orbit, 2-finger pan / pinch zoom / twist, long-press drag box selection,
   double tap to focus (finger) or select a body (pencil), 3-finger swipe undo / redo.
 - Palm rejection: while a pen is down, single touch contacts are ignored; intentional two-finger

@@ -39,6 +39,12 @@ export interface GestureHandlers {
   onThreeFingerSwipe(dir: 'left' | 'right'): void;
   onZoom(factor: number): void;
   isPenActive(): boolean;
+  /**
+   * Decides whether a single touch contact should model (draw / drag geometry)
+   * instead of orbiting. Used as the fallback for finger-only devices: once a
+   * pen has been seen, fingers stay on navigation duty.
+   */
+  onTouchModel(p: PointerSample): boolean;
 }
 
 type Mode = 'idle' | 'primary' | 'touchPending' | 'touchDrag' | 'two' | 'three' | 'mouseNav';
@@ -62,6 +68,7 @@ export class GestureEngine {
   private threeSwipe = false;
   private navButton = 0;
   private suppressUntil = 0;
+  private penSeen = false;
 
   constructor(private handlers: GestureHandlers) {}
 
@@ -93,6 +100,11 @@ export class GestureEngine {
     return this.primary?.kind === 'pen';
   }
 
+  /** True once any pen contact has been seen in this session. */
+  hasPen(): boolean {
+    return this.penSeen;
+  }
+
   private onContext = (e: Event) => e.preventDefault();
 
   private clearLongPress() {
@@ -117,6 +129,7 @@ export class GestureEngine {
       moved: false,
     };
     this.pointers.set(sample.id, sample);
+    if (kind === 'pen') this.penSeen = true;
 
     if (kind === 'mouse') {
       if (e.button === 1 || (e.button === 0 && e.altKey)) {
@@ -153,6 +166,11 @@ export class GestureEngine {
         return;
       }
       if (touches.length === 2) {
+        // A second finger cancels an in-flight single-finger modelling contact.
+        if (this.mode === 'primary' && this.primary && this.primary.kind === 'touch') {
+          this.handlers.onPrimaryUp(this.primary, e);
+          this.primary = null;
+        }
         this.mode = 'two';
         this.clearLongPress();
         if (this.pointers.size - 1 === 1) this.handlers.onFingerDragEnd(this.primary ?? sample);
@@ -163,6 +181,15 @@ export class GestureEngine {
       }
       if (this.handlers.isPenActive()) {
         // Palm contact while drawing: deliberately ignored.
+        return;
+      }
+      if (this.handlers.onTouchModel(sample)) {
+        // Finger-only device: this contact draws or manipulates geometry.
+        this.mode = 'primary';
+        this.primary = sample;
+        this.capture(e.pointerId);
+        this.handlers.onPrimaryDown(sample, e);
+        e.preventDefault();
         return;
       }
       this.mode = 'touchPending';
