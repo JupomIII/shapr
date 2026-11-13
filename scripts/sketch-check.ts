@@ -63,6 +63,12 @@ check('locked rectangle is fully defined', defined.fullyDefined, `dof ${defined.
 
 /* --------------------------- circle-only profile -------------------------- */
 
+/* -------------------- degenerate input must not fake a profile ------------ */
+
+const flat = emptySketch();
+addRectangle(flat, [0, 0], [40, 0]);
+check('a collapsed rectangle has no profile', sketchRegions(flat).length === 0, `${sketchRegions(flat).length} regions`);
+
 const circleOnly = emptySketch();
 addCircle(circleOnly, [0, 0], 20);
 check('closed circle is a profile with no open ends', sketchRegions(circleOnly).length === 1 && openEndpoints(circleOnly).length === 0);

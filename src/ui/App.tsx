@@ -133,6 +133,7 @@ export default function App() {
         // selection.
         controllerRef.current?.cancel();
         if (state.picker) {
+          S.setHover(null);
           S.store.set({ picker: null });
           return;
         }

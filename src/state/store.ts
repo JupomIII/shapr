@@ -261,6 +261,7 @@ export function commit({ mutate, select, label }: CommitOptions) {
     evalResult,
     geometryVersion,
     history: { past, future: [], pastSel, futureSel: [] },
+    picker: null,
     ...(select !== undefined ? { selection: select } : {}),
   });
   scheduleAutosave();
@@ -304,6 +305,8 @@ export function undo() {
     history: { past, future, pastSel, futureSel },
     selection: revivableSelection(restoreSel, prev, evalResult),
     pending: null,
+    picker: null,
+    hover: null,
   });
   scheduleAutosave();
 }
@@ -328,6 +331,8 @@ export function redo() {
     history: { past, future, pastSel, futureSel },
     selection: revivableSelection(restoreSel, next, evalResult),
     pending: null,
+    picker: null,
+    hover: null,
   });
   scheduleAutosave();
 }
@@ -405,6 +410,8 @@ export function beginSketch(planeId: 'XY' | 'XZ' | 'YZ' | 'face', face?: Selecti
     activeSketchId: sketch.id,
     sketchTool: 'line',
     selection: [],
+    picker: null,
+    hover: null,
     visibleSketchIds: [...store.state.visibleSketchIds, sketch.id],
     panel: store.state.panel === 'projects' ? 'none' : store.state.panel,
   });

@@ -670,10 +670,18 @@ export class InteractionController {
       }
     }
 
-    const snapped = this.snap(sk, raw, st.start);
-    st.current = snapped.p;
+    // A rectangle needs both axes free: axis inference against its first corner
+    // (or snapping onto that corner) would collapse it to a line, so the
+    // snapped point is only used when it keeps a real width and height.
+    const snapped = this.snap(sk, raw, st.tool === 'rect' ? null : st.start);
+    let point = snapped.p;
+    if (st.tool === 'rect') {
+      if (Math.abs(point[0] - st.start[0]) < 1e-6) point = [raw[0], point[1]];
+      if (Math.abs(point[1] - st.start[1]) < 1e-6) point = [point[0], raw[1]];
+    }
+    st.current = point;
     if (st.tool !== 'auto' && st.tool !== 'spline') {
-      st.points = [st.start, snapped.p];
+      st.points = [st.start, point];
     }
 
     // Automatic Line/Arc: a quick side-to-side wrist shake while drawing
