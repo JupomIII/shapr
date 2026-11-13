@@ -57,7 +57,7 @@ const COLORS = {
   bodyEdge: 0x2b2f34,
   accent: 0x0a84ff,
   accentSoft: 0x2f8fdc,
-  sketch: 0x6b737d,
+  sketch: 0x9db0c2,
   sketchActive: 0x35c7d8,
   grid: 0x23272d,
   gridMajor: 0x2e333b,
@@ -524,7 +524,7 @@ export class Viewport {
           new THREE.LineBasicMaterial({
             color,
             transparent: true,
-            opacity: isActive ? 1 : 0.55,
+            opacity: isActive ? 1 : 0.9,
             depthTest: false,
           }),
         );
