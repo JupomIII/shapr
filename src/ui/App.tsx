@@ -6,6 +6,7 @@ import * as S from '../state/store';
 import * as OPS from '../state/ops';
 import { EmptyHint, Rail, StatusRight, Toast, TopBar, ViewCubeOverlay } from './Bars';
 import { PendingChip, SketchDimensionChip } from './Chips';
+import { SelectionGizmo } from './Gizmos';
 import { FeaturePanel, HelpPanel, MeasurePanel, ProjectsPanel } from './Panels';
 
 export default function App() {
@@ -196,6 +197,7 @@ export default function App() {
         <ViewCubeOverlay />
         <StatusRight />
         <EmptyHint />
+        <SelectionGizmo />
         <PendingChip />
         <SketchDimensionChip />
         <Toast />

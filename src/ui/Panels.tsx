@@ -807,6 +807,26 @@ export function HelpPanel() {
         </button>
       </div>
       <div className="panel-body">
+        <div className="panel-section-title">Workflow</div>
+        <ol className="help-steps">
+          <li>Tap <b>Sketch</b>, then a plane (or a flat face).</li>
+          <li>Draw a closed shape, then <b>Finish sketch</b>.</li>
+          <li>The profile stays selected: an arrow sits on it.</li>
+          <li>Drag the arrow for a live extrusion, or tap it to type an exact value.</li>
+          <li>Tap empty space when the shape looks right — that confirms the feature.</li>
+        </ol>
+        <div className="help-row">
+          <span className="keys">Face</span>
+          <span className="desc">Its arrow offsets the face, dragging inward cuts</span>
+        </div>
+        <div className="help-row">
+          <span className="keys">Edge</span>
+          <span className="desc">Drag its handle for a live fillet radius</span>
+        </div>
+        <div className="help-row">
+          <span className="keys">Esc / Enter</span>
+          <span className="desc">Cancel / confirm the current feature</span>
+        </div>
         <div className="panel-section-title">Apple Pencil</div>
         <div className="help-row">
           <span className="keys">Pencil drag</span>

@@ -268,18 +268,19 @@ export function buildRegions(loops: Vec2[][]): Region2[] {
   loops.forEach((l, i) => {
     if (depth[i] % 2 !== 0) return;
     const holes: Vec2[][] = [];
-    const pt = l[0];
     loops.forEach((h, j) => {
       if (depth[j] % 2 !== 1) return;
       if (areas[j] >= areas[i]) return;
-      if (!pointInPolygon(pt, loops[j])) return;
+      // The hole has to sit inside this outer loop. Test the hole's own point:
+      // a corner of the outer loop is never inside the hole.
+      const hp = h[0];
+      if (!pointInPolygon(hp, l)) return;
       // Smallest containing outer is this one.
       let parentArea = Infinity;
       let parent = -1;
       loops.forEach((o, k) => {
         if (depth[k] % 2 !== 0 || k === j) return;
-        if (areas[k] === areas[i]) return;
-        if (pointInPolygon(pt, loops[k]) && areas[k] < parentArea) {
+        if (pointInPolygon(hp, o) && areas[k] < parentArea) {
           parent = k;
           parentArea = areas[k];
         }

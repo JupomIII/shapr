@@ -260,7 +260,14 @@ export class InteractionController {
 
   private handleTap(p: PointerSample) {
     const s = S.store.state;
-    if (s.pending) return;
+    if (s.pending) {
+      // Shapr3D finishes an operation when you tap empty space, so the check
+      // lives on the geometry rather than in a toolbar.
+      const onGeometry =
+        !!this.pickRegion(p.x, p.y) || !!this.vp.pickEdge(p.x, p.y) || !!this.vp.pickFace(p.x, p.y);
+      if (!onGeometry) S.confirmPending();
+      return;
+    }
     if (s.mode === 'sketch') {
       const sk = S.activeSketch();
       if (!sk) return;

@@ -5,6 +5,7 @@ import { useSyncExternalStore } from 'react';
 import { Vec2, Vec3 } from '../kernel/vec';
 import { Solid } from '../kernel/solid';
 import { Sketch } from '../sketch/types';
+import { sketchRegions } from '../sketch/geometry';
 import { solveSketch } from '../sketch/solver';
 import {
   EvalBody,
@@ -398,12 +399,17 @@ export function finishSketch() {
     });
   }
   // A finished sketch stays visible so its profiles can still be picked and dragged;
-  // it is only hidden once a solid feature consumes it.
+  // it is only hidden once a solid feature consumes it. A single closed profile is
+  // selected outright, so the extrude gizmo is right there to be dragged.
+  const regions = sk ? sketchRegions(sk) : [];
   store.set({
     mode: 'select',
     activeSketchId: null,
     sketchTool: 'select',
-    selection: [],
+    selection:
+      sk && regions.length === 1
+        ? [{ kind: 'region', sketchId: sk.id, regionIndex: 0 }]
+        : [],
     visibleSketchIds: sk
       ? Array.from(new Set([...store.state.visibleSketchIds, sk.id]))
       : store.state.visibleSketchIds,
