@@ -14,7 +14,42 @@ import {
   RevolveFeature,
 } from '../model/types';
 import { sketchRegions } from '../sketch/geometry';
+import { solveSketch } from '../sketch/solver';
+import { ConstraintKind } from '../sketch/types';
 import * as S from './store';
+
+/**
+ * Adds a relation between two sketch elements and keeps it only if the solver can
+ * still satisfy the whole sketch. A conflicting relation is rolled back instead of
+ * leaving geometry that can no longer be solved.
+ */
+export function applySketchConstraint(
+  sketchId: string,
+  kind: ConstraintKind,
+  refs: string[],
+  label: string,
+) {
+  const sk = S.sketchById(sketchId);
+  if (!sk) return;
+  const exists = sk.constraints.some(
+    (c) => c.kind === kind && c.refs.length === refs.length && refs.every((r) => c.refs.includes(r)),
+  );
+  if (exists) {
+    S.toast(`Already ${label.toLowerCase()}`);
+    return;
+  }
+  S.editSketch(sketchId, (draft) => {
+    draft.constraints.push({ id: S.uid('c'), kind, refs });
+  });
+  const after = S.sketchById(sketchId);
+  const solved = after ? solveSketch(after) : null;
+  if (!solved || !solved.satisfied) {
+    S.undo();
+    S.toast(`${label} conflicts with the existing constraints`);
+    return;
+  }
+  S.toast(`${label} applied`);
+}
 
 const featureName = (kind: string, label: string): string => {
   const count = S.store.state.doc.features.filter((f) => f.kind === kind).length + 1;

@@ -33,6 +33,11 @@ A sketch tells you what it is before you leave it, the way Shapr3D does:
 - Selecting an element shows its **constraint badges** (H, V, ⟂, ∥, =, ◎, T, ↺, ◉, dimensions).
   Tapping a badge deletes that constraint and re-solves, which is the quickest way out of an
   over-constrained sketch.
+- **Relations can be added too**: sketch elements accumulate in the selection (tap a second one
+  without losing the first, tap it again to drop it) and a small **Constraint** row appears with
+  ⟂ perpendicular, ∥ parallel, = equal and T tangent. Each button only enables for a pair it can
+  apply to (two lines, two arcs/circles, a line and a circle). A relation the solver cannot satisfy
+  is rolled back with a toast, so a sketch never ends up in a state it cannot solve.
 - **Everything stacked under one tap is listed**, the way Shapr3D resolves overlapping geometry: a
   tap that hits a profile, an edge, a face and the body behind it opens a short **Select** list
   (Profile / Edge / Face / Body) with a name or size on each row. Hovering a row highlights that

@@ -280,7 +280,18 @@ export class InteractionController {
       if (tool === 'select' || tool === 'dimension' || tool === 'line') {
         const id = this.pickSketchEntity(sk, p2);
         if (id) {
-          S.setSelection([{ kind: 'sketchEntity', sketchId: sk.id, entityId: id }]);
+          const current = S.store.state.selection;
+          const allEntities = current.every((x) => x.kind === 'sketchEntity');
+          const already = current.some((x) => x.kind === 'sketchEntity' && x.entityId === id);
+          // Sketch elements accumulate so a pair can take a relation; tapping a
+          // selected element removes it again.
+          if (already) {
+            S.setSelection(current.filter((x) => !(x.kind === 'sketchEntity' && x.entityId === id)));
+          } else if (allEntities && current.length) {
+            S.setSelection([...current, { kind: 'sketchEntity', sketchId: sk.id, entityId: id }]);
+          } else {
+            S.setSelection([{ kind: 'sketchEntity', sketchId: sk.id, entityId: id }]);
+          }
           return;
         }
         if (tool === 'select') S.setSelection([]);

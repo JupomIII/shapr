@@ -151,7 +151,9 @@ export function SketchDimensionChip() {
   }
 
   const units = s.doc.units;
-  const valid = !!(s.mode === 'sketch' && e && value > 0);
+  // With several elements selected the relation row owns the interaction.
+  const multi = s.selection.filter((x) => x.kind === 'sketchEntity').length > 1;
+  const valid = !!(s.mode === 'sketch' && e && value > 0 && !multi);
   useEffect(() => {
     if (!valid) return;
     if (!focused) setText(fmtNum(toDisplay(value, units), 2));

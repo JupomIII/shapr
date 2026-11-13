@@ -292,6 +292,13 @@ export function solveSketch(
 
   const nRes = best.length;
   if (nRes > 0 && freeCols.length > 0) {
+    // Levenberg–Marquardt can stall in a poor basin: lambda grows, the loop gives
+    // up, and the residual stays around 1e-3. Restarting from the best point with
+    // a fresh lambda reaches machine precision in one extra pass, which keeps a
+    // valid relation (e.g. perpendicular between two lines) from looking like a
+    // conflict.
+    for (let pass = 0; pass < 3; pass++) {
+    lambda = 1e-6;
     for (let iter = 0; iter < 50; iter++) {
       const maxRes = Math.max(...best.map(Math.abs));
       if (maxRes < 1e-9) break;
@@ -350,6 +357,8 @@ export function solveSketch(
         if (lambda > 1e8) break;
       }
       if (maxStep < 1e-10) break;
+    }
+    if (best.length && Math.max(...best.map(Math.abs)) < 1e-9) break;
     }
   }
 

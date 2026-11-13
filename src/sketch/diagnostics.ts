@@ -4,8 +4,28 @@
 // whether the shape is real before leaving the sketch.
 
 import { Vec2 } from '../kernel/vec';
-import { Sketch } from './types';
+import { Sketch, SketchEntity } from './types';
+import { arcGeom } from './geometry';
 import { solveSketch } from './solver';
+
+/** Representative point of an entity: line midpoint, circle/arc centre, spline middle. */
+export function entityMidpoint(sk: Sketch, e: SketchEntity): Vec2 | null {
+  if (e.kind === 'line') {
+    const a = sk.points[e.a];
+    const b = sk.points[e.b];
+    return a && b ? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] : null;
+  }
+  if (e.kind === 'circle') return sk.points[e.c] ?? null;
+  if (e.kind === 'arc') {
+    const g = arcGeom(sk, e);
+    return g ? g.c : null;
+  }
+  if (e.kind === 'spline') {
+    const pts = e.pts.map((id) => sk.points[id]).filter(Boolean) as Vec2[];
+    return pts.length ? pts[Math.floor(pts.length / 2)] : null;
+  }
+  return null;
+}
 
 export interface OpenEnd {
   id: string;

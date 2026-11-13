@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Vec2, Vec3 } from '../kernel/vec';
 import { to3D } from '../kernel/ops';
-import { arcGeom } from '../sketch/geometry';
+import { entityMidpoint } from '../sketch/diagnostics';
 import { Sketch, SketchEntity } from '../sketch/types';
 import { viewportRef } from '../render/viewportRef';
 import * as S from '../state/store';
@@ -53,24 +53,6 @@ const refPointsOf = (e: SketchEntity): string[] => {
   return [];
 };
 
-const entityMid = (sk: Sketch, e: SketchEntity): Vec2 | null => {
-  if (e.kind === 'line') {
-    const a = sk.points[e.a];
-    const b = sk.points[e.b];
-    return a && b ? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] : null;
-  }
-  if (e.kind === 'circle') return sk.points[e.c] ?? null;
-  if (e.kind === 'arc') {
-    const g = arcGeom(sk, e);
-    return g ? g.c : null;
-  }
-  if (e.kind === 'spline') {
-    const pts = e.pts.map((id) => sk.points[id]).filter(Boolean) as Vec2[];
-    return pts.length ? pts[Math.floor(pts.length / 2)] : null;
-  }
-  return null;
-};
-
 export function SketchBadges() {
   const s = S.useApp();
   const [, setTick] = useState(0);
@@ -92,13 +74,15 @@ export function SketchBadges() {
   }, [e?.id]);
 
   const vp = viewportRef.current;
-  if (!sk || !e || !vp || s.mode !== 'sketch') return null;
+  // The relation row takes over when a pair is selected.
+  const multi = s.selection.filter((x) => x.kind === 'sketchEntity').length > 1;
+  if (!sk || !e || !vp || s.mode !== 'sketch' || multi) return null;
 
   const refs = refPointsOf(e);
   const list = sk.constraints.filter(
     (c) => c.refs.includes(e.id) || c.refs.some((r) => refs.includes(r)),
   );
-  const mid = entityMid(sk, e);
+  const mid = entityMidpoint(sk, e);
   if (!mid || !list.length) return null;
 
   const frame = {

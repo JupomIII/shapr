@@ -837,6 +837,12 @@ export function HelpPanel() {
           <span className="desc">Shown on the selected element; tap one to remove it</span>
         </div>
         <div className="help-row">
+          <span className="keys">Two elements</span>
+          <span className="desc">
+            A Constraint row appears: perpendicular, parallel, equal, tangent
+          </span>
+        </div>
+        <div className="help-row">
           <span className="keys">Status bar</span>
           <span className="desc">Live degrees of freedom, closed profiles and open ends</span>
         </div>

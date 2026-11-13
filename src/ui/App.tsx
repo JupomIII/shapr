@@ -9,6 +9,7 @@ import { PendingChip, SketchDimensionChip } from './Chips';
 import { SelectionGizmo } from './Gizmos';
 import { SketchBadges } from './SketchBadges';
 import { SelectionPicker } from './SelectionPicker';
+import { SketchConstraints } from './SketchConstraints';
 import { sketchDiagnostics } from '../sketch/diagnostics';
 import { FeaturePanel, HelpPanel, MeasurePanel, ProjectsPanel } from './Panels';
 
@@ -249,6 +250,7 @@ export default function App() {
         <SelectionGizmo />
         <SketchBadges />
         <SelectionPicker />
+        <SketchConstraints />
         <PendingChip />
         <SketchDimensionChip />
         <Toast />
