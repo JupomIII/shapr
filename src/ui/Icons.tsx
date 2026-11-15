@@ -45,7 +45,20 @@ export type IconName =
   | 'more'
   | 'settings'
   | 'history'
-  | 'plane';
+  | 'plane'
+  | 'slot'
+  | 'polygon'
+  | 'shell'
+  | 'split'
+  | 'sweep'
+  | 'loft'
+  | 'isolate'
+  | 'section'
+  | 'xray'
+  | 'wireframe'
+  | 'camera'
+  | 'drawing'
+  | 'pin';
 
 const P: Record<IconName, JSX.Element> = {
   select: <path d="M5.5 3.5l13 7.2-5.6 1.6-2 5.4z" />,
@@ -186,6 +199,81 @@ const P: Record<IconName, JSX.Element> = {
     <>
       <path d="M3.6 15.2L12 10.6l8.4 4.6-8.4 4.6z" />
       <path d="M3.6 15.2V9.6L12 5l8.4 4.6v5.6" />
+    </>
+  ),
+  slot: (
+    <>
+      <path d="M8 9.5h8a2.5 2.5 0 0 1 0 5H8a2.5 2.5 0 0 1 0-5z" />
+      <path d="M8 9.5v5M16 9.5v5" />
+    </>
+  ),
+  polygon: <path d="M12 3.6l7.2 4.2v8.4L12 20.4 4.8 16.2V7.8z" />,
+  shell: (
+    <>
+      <path d="M4 7.5h16v9H4z" />
+      <path d="M6.6 10.1h10.8v3.8H6.6z" />
+    </>
+  ),
+  split: (
+    <>
+      <path d="M12 3.2v17.6" />
+      <path d="M4 8.5h5.2v7H4z M14.8 8.5H20v7h-5.2z" />
+    </>
+  ),
+  sweep: (
+    <>
+      <path d="M3.6 18.4c4.4 0 6.2-12.8 16.8-12.8" />
+      <path d="M8.2 15.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2z" />
+    </>
+  ),
+  loft: (
+    <>
+      <path d="M8.5 4.5h7l1.5 4h-10z" />
+      <path d="M5 15.5h14l1.5 4h-17z" />
+      <path d="M7 8.5l-1.4 7M17 8.5l1.4 7" />
+    </>
+  ),
+  isolate: (
+    <>
+      <path d="M12 3.6l8 4.3v8.2L12 20.4l-8-4.3V7.9z" />
+      <path d="M12 9.4l3.4 1.9v3.4L12 16.6l-3.4-1.9v-3.4z" />
+    </>
+  ),
+  section: (
+    <>
+      <path d="M4 7.2l8-4.2 8 4.2v9.6l-8 4.2-8-4.2z" />
+      <path d="M4 12.2l8 4.2 8-4.2" strokeDasharray="2 1.6" />
+    </>
+  ),
+  xray: (
+    <>
+      <path d="M4 7.2l8-4.2 8 4.2v9.6l-8 4.2-8-4.2z" />
+      <path d="M8 9.4l8-4.2M8 14.6l8-4.2" opacity="0.7" />
+    </>
+  ),
+  wireframe: (
+    <>
+      <path d="M4 7.2l8-4.2 8 4.2v9.6l-8 4.2-8-4.2z" />
+      <path d="M12 12l8-4.8M12 12v9M12 12L4 7.2" />
+    </>
+  ),
+  camera: (
+    <>
+      <path d="M4 8.4h3.4L9 6.2h6l1.6 2.2H20v10H4z" />
+      <circle cx="12" cy="13.2" r="3" />
+    </>
+  ),
+  drawing: (
+    <>
+      <path d="M5 3.6h10l4 4v12.8H5z" />
+      <path d="M15 3.6v4h4" />
+      <path d="M8 11.4h8M8 14.6h5" />
+    </>
+  ),
+  pin: (
+    <>
+      <path d="M9.2 4.6h5.6l-.8 5.2 3 3.2H6.9l3-3.2z" />
+      <path d="M12 13v6.4" />
     </>
   ),
 };

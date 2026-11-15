@@ -4,14 +4,14 @@ import { viewportRef } from '../render/viewportRef';
 import { InteractionController } from '../input/controller';
 import * as S from '../state/store';
 import * as OPS from '../state/ops';
-import { EmptyHint, Rail, StatusRight, Toast, TopBar, ViewCubeOverlay } from './Bars';
+import { EmptyHint, Rail, StatusRight, Toast, TopBar, ViewCubeOverlay, ViewStateChip } from './Bars';
 import { PendingChip, SketchDimensionChip } from './Chips';
 import { SelectionGizmo } from './Gizmos';
 import { SketchBadges } from './SketchBadges';
 import { SelectionPicker } from './SelectionPicker';
 import { SketchConstraints } from './SketchConstraints';
 import { sketchDiagnostics } from '../sketch/diagnostics';
-import { FeaturePanel, HelpPanel, MeasurePanel, ProjectsPanel } from './Panels';
+import { DrawingPanel, FeaturePanel, HelpPanel, MeasurePanel, ProjectsPanel } from './Panels';
 import { PenButton } from './penTap';
 
 export default function App() {
@@ -47,13 +47,22 @@ export default function App() {
 
   /* ------------------------------ renderer sync ----------------------------- */
 
+  // Isolate and Section are view state: they change what is drawn, never the
+  // document. Section really cuts the B-rep so the cut is capped material.
+  const viewBodies = useMemo(
+    () => S.renderBodies(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [s.evalResult, s.isolatedBodyIds, s.section, s.geometryVersion],
+  );
+
   useEffect(() => {
-    viewportRef.current?.setBodies(s.evalResult.bodies, s.geometryVersion);
-    if (!fittedRef.current && s.evalResult.bodies.length) {
+    viewportRef.current?.setDisplayMode(s.displayMode);
+    viewportRef.current?.setBodies(viewBodies, s.geometryVersion);
+    if (!fittedRef.current && viewBodies.length) {
       fittedRef.current = true;
-      viewportRef.current?.fitAll(s.evalResult.bodies);
+      viewportRef.current?.fitAll(viewBodies);
     }
-  }, [s.evalResult, s.geometryVersion]);
+  }, [viewBodies, s.geometryVersion, s.displayMode]);
 
   useEffect(() => {
     viewportRef.current?.setSelection(s.selection, s.hover);
@@ -254,6 +263,7 @@ export default function App() {
         <SketchConstraints />
         <PendingChip />
         <SketchDimensionChip />
+        <ViewStateChip />
         <Toast />
         {s.featuresOpen ? (
           <FeaturePanel dock />
@@ -269,6 +279,7 @@ export default function App() {
         {s.panel === 'projects' && <ProjectsPanel />}
         {s.panel === 'measure' && <MeasurePanel />}
         {s.panel === 'help' && <HelpPanel />}
+        {s.panel === 'drawing' && <DrawingPanel />}
       </div>
     </div>
   );

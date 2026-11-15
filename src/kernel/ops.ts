@@ -25,6 +25,7 @@ import {
   basisFor,
   facesToTris,
   makePlane,
+  measureSolid,
   orientSolid,
   interiorPoint,
   pointInPolygon,
@@ -91,21 +92,68 @@ const faceFromLoop3D = (loop: Vec3[]): Face | null => {
   return { plane: { n, d }, loops: [loop] };
 };
 
+/**
+ * Offset a closed loop by `dist` along its outward normal (miter joins).
+ * The outward direction follows the loop winding, so an outer boundary grows
+ * while a hole shrinks — exactly what a draft angle does to a cross-section.
+ */
+export function offsetLoop2D(loop: Vec2[], dist: number): Vec2[] {
+  const n = loop.length;
+  if (n < 3 || Math.abs(dist) < 1e-9) return loop.slice();
+  const out: Vec2[] = [];
+  for (let i = 0; i < n; i++) {
+    const prev = loop[(i - 1 + n) % n];
+    const cur = loop[i];
+    const next = loop[(i + 1) % n];
+    const ex = next[0] - cur[0];
+    const ey = next[1] - cur[1];
+    const px = cur[0] - prev[0];
+    const py = cur[1] - prev[1];
+    const pl = Math.hypot(px, py) || 1e-9;
+    const el = Math.hypot(ex, ey) || 1e-9;
+    // Outward normal of a CCW edge is (dy, -dx); the same formula keeps a hole
+    // loop (CW) growing into the material.
+    const o1: Vec2 = [py / pl, -px / pl];
+    const o2: Vec2 = [ey / el, -ex / el];
+    const ax = cur[0] + o1[0] * dist;
+    const ay = cur[1] + o1[1] * dist;
+    const bx = cur[0] + o2[0] * dist;
+    const by = cur[1] + o2[1] * dist;
+    const den = px * ey - py * ex;
+    if (Math.abs(den) < 1e-9) {
+      out.push([bx, by]);
+      continue;
+    }
+    const t = ((bx - ax) * ey - (by - ay) * ex) / den;
+    out.push([ax + px * t, ay + py * t]);
+  }
+  return out;
+}
+
 /** Extrude closed regions (outer loop + holes) to a solid. */
-export function extrudeRegions(regions: Region2[], frame: Frame, height: number): Solid {
+export function extrudeRegions(
+  regions: Region2[],
+  frame: Frame,
+  height: number,
+  draftDeg = 0,
+): Solid {
   const faces: Face[] = [];
   const n = frame.n;
   const h = height;
   if (Math.abs(h) < 1e-7) return { faces: [] };
+  const taper = Math.abs(draftDeg) > 1e-6 ? Math.abs(h) * Math.tan((draftDeg * Math.PI) / 180) : 0;
 
   for (const region of regions) {
     const outer = cleanLoop(region.outer);
     if (outer.length < 3) continue;
     const holes = region.holes.map(cleanLoop).filter((l) => l.length >= 3);
     const loops2 = [orientLoop(outer, true), ...holes.map((h2) => orientLoop(h2, false))];
+    const topLoops2 = taper ? loops2.map((l) => offsetLoop2D(l, taper)) : loops2;
 
     const bottom = loops2.map((l) => l.map((p) => to3D(frame, p)));
-    const top = loops2.map((l) => l.map((p) => add3(to3D(frame, p), scale3(n, h))));
+    const top = topLoops2.map((l) =>
+      l.map((p) => add3(to3D(frame, p), scale3(n, h))),
+    );
 
     const baseD = dot3(n, frame.origin);
     // Bottom cap faces -n: reverse loops so they wind correctly w.r.t. -n.
@@ -673,4 +721,284 @@ export function circularPattern(
 
 export function offsetFaceOutward(s: Solid, faceIndex: number, distance: number): Solid | null {
   return pushPullFace(s, faceIndex, distance);
+}
+
+/* ---------------------------------- shell --------------------------------- */
+
+const newellNormal = (loop: Vec3[]): Vec3 => {
+  let nx = 0;
+  let ny = 0;
+  let nz = 0;
+  for (let i = 0; i < loop.length; i++) {
+    const a = loop[i];
+    const b = loop[(i + 1) % loop.length];
+    nx += (a[1] - b[1]) * (a[2] + b[2]);
+    ny += (a[2] - b[2]) * (a[0] + b[0]);
+    nz += (a[0] - b[0]) * (a[1] + b[1]);
+  }
+  return norm3([nx, ny, nz]);
+};
+
+/**
+ * Shell: hollow a body to a uniform wall thickness, opening the given faces.
+ *
+ * The cavity is the intersection of every face plane pushed inward by the
+ * thickness (pushed outward for an opened face, so the hollow breaks through
+ * there), then that cavity is subtracted from the body. For a simply-shaped
+ * planar body this is exact wall thickness on every face.
+ */
+export function shellSolid(
+  solid: Solid,
+  thickness: number,
+  openFaces: { point: Vec3; normal: Vec3 }[] = [],
+): Solid | null {
+  const t = Math.abs(thickness);
+  if (t < 1e-4 || !solid.faces.length) return null;
+  const m = measureSolid(solid);
+  const pad = Math.max(1, t * 4);
+  const min: Vec3 = [m.bboxMin[0] - pad, m.bboxMin[1] - pad, m.bboxMin[2] - pad];
+  const max: Vec3 = [m.bboxMax[0] + pad, m.bboxMax[1] + pad, m.bboxMax[2] + pad];
+  let cavity = boxSolid(min, max);
+
+  const isOpen = (f: Face) =>
+    openFaces.some(
+      (r) =>
+        dot3(f.plane.n, norm3(r.normal)) > 0.999 &&
+        Math.abs(dot3(f.plane.n, r.point) - f.plane.d) < 0.75,
+    );
+
+  for (const f of solid.faces) {
+    if (isOpen(f)) continue;
+    cavity = clipSolid(cavity, f.plane.n, f.plane.d - t, false);
+    if (!cavity.faces.length) return null;
+  }
+
+  const out = subtractSolids(solid, cavity);
+  return out.faces.length ? out : null;
+}
+
+/** Split a body at a plane, keeping both halves as capped solids. */
+export function splitByPlane(
+  solid: Solid,
+  n: Vec3,
+  d: number,
+): { positive: Solid | null; negative: Solid | null } {
+  const positive = clipSolid(solid, norm3(n), d, true);
+  const negative = clipSolid(solid, norm3(n), d, false);
+  return {
+    positive: positive.faces.length ? positive : null,
+    negative: negative.faces.length ? negative : null,
+  };
+}
+
+/* --------------------------------- lofting -------------------------------- */
+
+/** Resample a closed 3D loop to `count` points, evenly spaced by arc length. */
+function resampleLoop(loop: Vec3[], count: number): Vec3[] {
+  const pts = loop.length > 1 && dist3(loop[0], loop[loop.length - 1]) < 1e-9
+    ? loop.slice(0, -1)
+    : loop.slice();
+  if (pts.length < 2) return [];
+  const cum: number[] = [0];
+  for (let i = 1; i <= pts.length; i++) {
+    const a = pts[i - 1];
+    const b = pts[i % pts.length];
+    cum.push(cum[i - 1] + dist3(a, b));
+  }
+  const total = cum[cum.length - 1];
+  if (total < 1e-9) return [];
+  const out: Vec3[] = [];
+  let seg = 0;
+  for (let i = 0; i < count; i++) {
+    const target = (total * i) / count;
+    while (seg + 1 < cum.length && cum[seg + 1] < target) seg++;
+    const a = pts[seg % pts.length];
+    const b = pts[(seg + 1) % pts.length];
+    const span = cum[seg + 1] - cum[seg] || 1e-9;
+    const f = (target - cum[seg]) / span;
+    out.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f]);
+  }
+  return out;
+}
+
+/** Best start index / direction so two consecutive loops do not twist. */
+function alignLoop(prev: Vec3[], next: Vec3[]): Vec3[] {
+  const n = next.length;
+  let bestStart = 0;
+  let bestRev = false;
+  let bestCost = Infinity;
+  for (const rev of [false, true]) {
+    const base = rev ? next.slice().reverse() : next;
+    for (let off = 0; off < n; off++) {
+      let cost = 0;
+      for (let i = 0; i < n; i++) cost += dist3(prev[i], base[(i + off) % n]);
+      if (cost < bestCost) {
+        bestCost = cost;
+        bestStart = off;
+        bestRev = rev;
+      }
+    }
+  }
+  const ordered = bestRev ? next.slice().reverse() : next;
+  return ordered.map((_, i) => ordered[(i + bestStart) % ordered.length]);
+}
+
+const quadTris = (quads: Vec3[][]): Tri[] => {
+  const tris: Tri[] = [];
+  for (const q of quads) {
+    if (q.length < 3) continue;
+    for (let i = 1; i + 1 < q.length; i++) tris.push([q[0], q[i], q[i + 1]]);
+  }
+  return tris;
+};
+
+/**
+ * Build a solid through a stack of cross-sections. Every section is a set of
+ * loops (outer first, then holes) with the same shape, so the side walls can be
+ * stitched quads and the ends capped.
+ */
+export function loftSections(
+  sections: Vec3[][][],
+  opts: { capStart?: boolean; capEnd?: boolean; closed?: boolean } = {},
+): Solid | null {
+  if (sections.length < 2) return null;
+  const ref = sections[0];
+  if (!ref.length || ref.some((l) => l.length < 3)) return null;
+  for (const s of sections) {
+    if (s.length !== ref.length || s.some((l, i) => l.length !== ref[i].length)) return null;
+  }
+
+  const tris: Tri[] = [];
+  const last = opts.closed ? sections.length : sections.length - 1;
+  for (let k = 0; k < last; k++) {
+    const a = sections[k];
+    const b = sections[(k + 1) % sections.length];
+    for (let li = 0; li < a.length; li++) {
+      const la = a[li];
+      const lb = b[li];
+      for (let i = 0; i < la.length; i++) {
+        const j = (i + 1) % la.length;
+        tris.push(...quadTris([[la[i], la[j], lb[j], lb[i]]]));
+      }
+    }
+  }
+
+  if (!opts.closed) {
+    const start = sections[0];
+    const startN = newellNormal(start[0]);
+    if (len3(startN) > 0.5) tris.push(...triangulateLoops(start, neg3(startN)));
+    const end = sections[sections.length - 1];
+    const endN = newellNormal(end[0]);
+    if (len3(endN) > 0.5) tris.push(...triangulateLoops(end, endN));
+  }
+
+  const out = trisToSolid(tris);
+  return out.faces.length ? out : null;
+}
+
+/** Loft between 3D profile loops taken from two or more sketches. */
+export function loftSolid(loops: Vec3[][], closed = false, sides = 72): Solid | null {
+  const usable = loops.filter((l) => l.length >= 3);
+  if (usable.length < 2) return null;
+  const resampled = usable.map((l) => resampleLoop(l, sides));
+  if (resampled.some((l) => l.length !== sides)) return null;
+  const stacked: Vec3[][] = [resampled[0]];
+  for (let i = 1; i < resampled.length; i++) stacked.push(alignLoop(stacked[i - 1], resampled[i]));
+  return loftSections(
+    stacked.map((l) => [l]),
+    { closed, capStart: true, capEnd: true },
+  );
+}
+
+/* ---------------------------------- sweep --------------------------------- */
+
+/**
+ * Sweep a profile along a 3D path. Sections are carried along the path with
+ * minimal rotation (no artificial twist), then the profile can be scaled and
+ * twisted along the run, as Shapr3D's sweep does.
+ */
+export function sweepRegions(
+  regions: Region2[],
+  frame: Frame,
+  path: Vec3[],
+  opts: { twist?: number; scale?: number; closed?: boolean; samples?: number } = {},
+): Solid | null {
+  if (path.length < 2 || !regions.length) return null;
+
+  const pathPts: Vec3[] = [];
+  for (const p of path) {
+    const last = pathPts[pathPts.length - 1];
+    if (!last || dist3(last, p) > 1e-6) pathPts.push(p);
+  }
+  if (opts.closed && pathPts.length > 2 && dist3(pathPts[0], pathPts[pathPts.length - 1]) < 1e-6) {
+    pathPts.pop();
+  }
+  if (pathPts.length < 2) return null;
+
+  const n = pathPts.length;
+  const tangents: Vec3[] = pathPts.map((p, i) => {
+    if (opts.closed) {
+      const a = pathPts[(i - 1 + n) % n];
+      const b = pathPts[(i + 1) % n];
+      return norm3(sub3(b, a));
+    }
+    const a = pathPts[Math.max(0, i - 1)];
+    const b = pathPts[Math.min(n - 1, i + 1)];
+    return norm3(sub3(b, a));
+  });
+
+  // Transport the profile frame along the path once; every region rides it.
+  const frames: { origin: Vec3; u: Vec3; v: Vec3 }[] = [];
+  let u = frame.u;
+  let v = frame.v;
+  let prevT = tangents[0];
+
+  for (let i = 0; i < n; i++) {
+    const t = tangents[i];
+    if (i > 0) {
+      const axis = cross3(prevT, t);
+      const axisLen = len3(axis);
+      if (axisLen > 1e-9) {
+        const ang = Math.atan2(axisLen, dot3(prevT, t));
+        const ax = norm3(axis);
+        u = rotateAbout(u, ax, ang);
+        v = rotateAbout(v, ax, ang);
+      }
+      prevT = t;
+    }
+    frames.push({ origin: pathPts[i], u, v });
+  }
+
+  let result: Solid | null = null;
+  for (const region of regions) {
+    const outer = orientLoop(cleanLoop(region.outer), true);
+    const holes = region.holes
+      .map((l) => orientLoop(cleanLoop(l), false))
+      .filter((l) => l.length >= 3);
+    const loops2 = [outer, ...holes];
+    if (loops2.some((l) => l.length < 3)) continue;
+
+    const sections: Vec3[][][] = frames.map((f, i) => {
+      const s = n > 1 ? i / (n - 1) : 0;
+      const scale = 1 + ((opts.scale ?? 1) - 1) * s;
+      const twist = ((opts.twist ?? 0) * Math.PI * s) / 180;
+      const ct = Math.cos(twist);
+      const st = Math.sin(twist);
+      return loops2.map((loop) =>
+        loop.map((p): Vec3 => {
+          const x = (p[0] * ct - p[1] * st) * scale;
+          const y = (p[0] * st + p[1] * ct) * scale;
+          return add3(f.origin, add3(scale3(f.u, x), scale3(f.v, y)));
+        }),
+      );
+    });
+    const swept = loftSections(sections, {
+      closed: !!opts.closed,
+      capStart: true,
+      capEnd: true,
+    });
+    if (!swept) continue;
+    result = result ? unionSolids(result, swept) : swept;
+  }
+  return result;
 }

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Vec3 } from '../kernel/vec';
 import { faceArea, measureSolid, solidEdges } from '../kernel/solid';
 import { sketchLoops, polygonCentroid } from '../sketch/geometry';
 import {
   download,
+  export3MF,
   exportDXF,
   exportOBJ,
   exportSTEP,
@@ -13,9 +14,25 @@ import {
   importSTL,
   SketchExportEntity,
 } from '../kernel/exporters';
+import { importDXF, importSTEP } from '../kernel/importers';
+import {
+  DrawingViewName,
+  buildDrawingSheet,
+  drawingDXF,
+  drawingPDF,
+  drawingSVG,
+} from '../kernel/drawing';
+import { sketchOpenChains } from '../sketch/geometry';
 import * as S from '../state/store';
 import * as OPS from '../state/ops';
-import { Feature, UNIT_FACTOR, UnitSystem, fromDisplay, toDisplay } from '../model/types';
+import {
+  BODY_COLORS,
+  Feature,
+  UNIT_FACTOR,
+  UnitSystem,
+  fromDisplay,
+  toDisplay,
+} from '../model/types';
 import { Icon, IconName } from './Icons';
 import { fmtNum } from './Chips';
 import { PenButton, PenSpan } from './penTap';
@@ -101,12 +118,43 @@ const iconForFeature = (f: Feature): IconName => {
       return 'mirror';
     case 'transform':
       return 'cube';
+    case 'shell':
+      return 'shell';
+    case 'sweep':
+      return 'sweep';
+    case 'loft':
+      return 'loft';
+    case 'split':
+      return 'split';
     case 'import':
       return 'folder';
     default:
       return 'cube';
   }
 };
+
+const ColorField = ({
+  value,
+  onCommit,
+}: {
+  value?: string;
+  onCommit: (color: string) => void;
+}) => (
+  <div className="field">
+    <label>Colour</label>
+    <div className="swatches">
+      {BODY_COLORS.map((c) => (
+        <button
+          key={c}
+          className={`swatch ${value === c ? 'on' : ''}`}
+          style={{ background: c }}
+          title={c}
+          onClick={() => onCommit(c)}
+        />
+      ))}
+    </div>
+  </div>
+);
 
 const unitsNow = (): UnitSystem => S.store.state.doc.units;
 const lenText = (mm: number, digits = 2): string =>
@@ -138,6 +186,14 @@ const featureMeta = (f: Feature): string => {
       return f.plane;
     case 'transform':
       return 'move';
+    case 'shell':
+      return `t ${len(f.thickness, 1)}`;
+    case 'sweep':
+      return f.twist ? `twist ${fmtNum(f.twist, 0)}°` : 'sweep';
+    case 'loft':
+      return `${f.profiles.length} profiles`;
+    case 'split':
+      return `${f.plane} ${len(f.offset, 1)}`;
     case 'import':
       return 'mesh';
     default:
@@ -183,6 +239,14 @@ function FeatureFields({ f }: { f: Feature }) {
               <option value={-1}>Against normal</option>
             </select>
           </div>
+          <NumField
+            label="Draft angle"
+            value={f.draft ?? 0}
+            step={1}
+            suffix="°"
+            onCommit={(v) => update({ draft: v } as Partial<Feature>)}
+          />
+          <ColorField value={f.color} onCommit={(color) => update({ color } as Partial<Feature>)} />
         </>
       );
     case 'revolve':
@@ -264,6 +328,123 @@ function FeatureFields({ f }: { f: Feature }) {
             value={f.rotationAngle ?? 0}
             suffix="°"
             onCommit={(v) => update({ rotationAngle: v, rotationAxis: [0, 0, 1] } as Partial<Feature>)}
+          />
+        </>
+      );
+    case 'shell':
+      return (
+        <>
+          <NumField
+            label="Wall thickness"
+            value={f.thickness}
+            step={0.5}
+            suffix="mm"
+            onCommit={(v) => update({ thickness: Math.max(0.1, v) } as Partial<Feature>)}
+          />
+          <div className="field">
+            <label>Open faces</label>
+            <span style={{ color: 'var(--muted)' }}>
+              {f.openFaces.length ? `${f.openFaces.length} removed` : 'closed (hollow)'}
+            </span>
+          </div>
+          <div className="hint-text" style={{ paddingTop: 0 }}>
+            Select a face and press Shell again to open it; each open face leaves a wall opening.
+          </div>
+        </>
+      );
+    case 'sweep': {
+      const sketches = S.store.state.doc.sketches.filter((sk) => sk.id !== f.sketchId);
+      return (
+        <>
+          <div className="field">
+            <label>Path</label>
+            <select
+              value={f.pathSketchId}
+              onChange={(e) => update({ pathSketchId: e.target.value } as Partial<Feature>)}
+            >
+              {sketches.map((sk) => (
+                <option key={sk.id} value={sk.id}>
+                  {sk.name} · {sketchOpenChains(sk).length} open
+                </option>
+              ))}
+            </select>
+          </div>
+          <NumField
+            label="Twist"
+            value={f.twist}
+            step={15}
+            suffix="°"
+            onCommit={(v) => update({ twist: v } as Partial<Feature>)}
+          />
+          <NumField
+            label="End scale"
+            value={f.scale}
+            step={0.1}
+            onCommit={(v) => update({ scale: Math.max(0.05, v) } as Partial<Feature>)}
+          />
+          <div className="field">
+            <label>Operation</label>
+            <select
+              value={f.operation}
+              onChange={(e) => update({ operation: e.target.value as never })}
+            >
+              <option value="new">New body</option>
+              <option value="join">Join</option>
+              <option value="cut">Cut</option>
+            </select>
+          </div>
+          <ColorField value={f.color} onCommit={(color) => update({ color } as Partial<Feature>)} />
+        </>
+      );
+    }
+    case 'loft':
+      return (
+        <>
+          <div className="field">
+            <label>Profiles</label>
+            <span style={{ color: 'var(--muted)' }}>{f.profiles.length}</span>
+          </div>
+          <div className="field">
+            <label>Periodic</label>
+            <input
+              type="checkbox"
+              checked={!!f.closed}
+              style={{ width: 18, height: 18 }}
+              onChange={(e) => update({ closed: e.target.checked } as Partial<Feature>)}
+            />
+          </div>
+          <div className="field">
+            <label>Operation</label>
+            <select
+              value={f.operation}
+              onChange={(e) => update({ operation: e.target.value as never })}
+            >
+              <option value="new">New body</option>
+              <option value="join">Join</option>
+            </select>
+          </div>
+          <ColorField value={f.color} onCommit={(color) => update({ color } as Partial<Feature>)} />
+        </>
+      );
+    case 'split':
+      return (
+        <>
+          <div className="field">
+            <label>Plane</label>
+            <select
+              value={f.plane}
+              onChange={(e) => update({ plane: e.target.value as never })}
+            >
+              <option value="XY">XY (horizontal)</option>
+              <option value="XZ">XZ (front)</option>
+              <option value="YZ">YZ (right)</option>
+            </select>
+          </div>
+          <NumField
+            label="Plane offset"
+            value={f.offset}
+            suffix="mm"
+            onCommit={(v) => update({ offset: v } as Partial<Feature>)}
           />
         </>
       );
@@ -437,11 +618,35 @@ export function ProjectsPanel() {
   const [name, setName] = useState(s.doc.name);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const bodies = s.evalResult.bodies.filter((b) => !b.hidden).map((b) => b.solid);
+  const visibleBodies = s.evalResult.bodies.filter((b) => !b.hidden);
+  const bodies = visibleBodies.map((b) => b.solid);
   const activeSketch = s.activeSketchId ?? s.doc.sketches[s.doc.sketches.length - 1]?.id ?? null;
 
   const onImport = async (file: File) => {
+    const lower = file.name.toLowerCase();
     try {
+      if (lower.endsWith('.dxf')) {
+        const text = await file.text();
+        const parsed = importDXF(text);
+        if (!parsed.shapes.length) {
+          S.toast('No supported entities found in that DXF');
+          return;
+        }
+        S.addDXFSketch(parsed.shapes, `Import ${file.name}`);
+        return;
+      }
+      if (lower.endsWith('.step') || lower.endsWith('.stp')) {
+        const text = await file.text();
+        const parsed = importSTEP(text);
+        S.addFeature({
+          id: S.uid('ft'),
+          name: `Import ${file.name}`,
+          kind: 'import',
+          positions: parsed.positions,
+        });
+        S.toast(`STEP imported · ${parsed.faces} faces`);
+        return;
+      }
       if (file.name.toLowerCase().endsWith('.stl')) {
         const buf = await file.arrayBuffer();
         const { positions } = importSTL(buf);
@@ -471,10 +676,10 @@ export function ProjectsPanel() {
         });
         S.toast('Mesh imported as a body');
       } else {
-        S.toast('Unsupported file. Use STL or OBJ.');
+        S.toast('Unsupported file. Use STL, OBJ, STEP or DXF.');
       }
-    } catch {
-      S.toast('Import failed');
+    } catch (err) {
+      S.toast(err instanceof Error ? err.message : 'Import failed');
     }
   };
 
@@ -619,13 +824,24 @@ export function ProjectsPanel() {
           >
             SVG (sketch)
           </button>
-          <button className="format-btn" disabled title="3MF is not implemented">
+          <button
+            className="format-btn"
+            disabled={!bodies.length}
+            onClick={() => {
+              const { data, filename } = export3MF(
+                visibleBodies.map((b) => ({ name: b.name, solid: b.solid, color: b.color })),
+                s.doc.name,
+              );
+              download(data, filename);
+              S.toast('3MF exported with body colours');
+            }}
+          >
             3MF
           </button>
         </div>
         <div className="hint-text">
-          STEP is written as a faceted B-rep (exact for planar bodies, tessellated for fillets and
-          revolves). 3MF export and STEP import are not implemented.
+          STEP is a faceted B-rep (exact for planar bodies, tessellated for fillets and revolves).
+          3MF carries one object per body with its colour, for multi-material printing.
         </div>
 
         <div className="panel-section-title">Import</div>
@@ -633,17 +849,21 @@ export function ProjectsPanel() {
           <button className="format-btn" onClick={() => fileRef.current?.click()}>
             STL / OBJ
           </button>
-          <button className="format-btn" disabled title="STEP import is not implemented">
+          <button className="format-btn" onClick={() => fileRef.current?.click()}>
             STEP
           </button>
-          <button className="format-btn" disabled title="DXF import is not implemented">
+          <button className="format-btn" onClick={() => fileRef.current?.click()}>
             DXF
           </button>
+        </div>
+        <div className="hint-text">
+          DXF becomes an editable sketch (LINE, CIRCLE, ARC, POLYLINE). STEP import reads faceted
+          B-rep geometry; analytic-surface STEP files are rejected with an explanation.
         </div>
         <input
           ref={fileRef}
           type="file"
-          accept=".stl,.obj"
+          accept=".stl,.obj,.step,.stp,.dxf"
           style={{ display: 'none' }}
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -892,6 +1112,12 @@ export function HelpPanel() {
           </span>
         </div>
         <div className="help-row">
+          <span className="keys">Add / Shift</span>
+          <span className="desc">
+            Keeps the selection and adds the next item — two profiles for a loft
+          </span>
+        </div>
+        <div className="help-row">
           <span className="keys">3-finger swipe</span>
           <span className="desc">Left: undo — Right: redo</span>
         </div>
@@ -927,11 +1153,198 @@ export function HelpPanel() {
           <span className="desc">Undo (shift to redo), <span className="kbd">F</span> fit,{' '}
             <span className="kbd">G</span> grid</span>
         </div>
-        <div className="panel-section-title">Not available yet</div>
+        <div className="panel-section-title">Display</div>
+        <div className="help-row">
+          <span className="keys">Settings</span>
+          <span className="desc">
+            Shaded / Wireframe / X-Ray, section view, 2D drawing and a 4K screenshot
+          </span>
+        </div>
+        <div className="help-row">
+          <span className="keys">Section</span>
+          <span className="desc">
+            Cuts every body at a plane and caps the cut; the plane and offset are adjustable, and
+            modelling is paused while it is on
+          </span>
+        </div>
+        <div className="help-row">
+          <span className="keys">Isolate</span>
+          <span className="desc">Hides every body except the selected one</span>
+        </div>
+        <div className="panel-section-title">Still not implemented</div>
         <div className="limit-note">
-          <strong>Loft, sweep, shell, draft, split, 3MF export and STEP/DXF import</strong> are not
-          implemented. Fillet and revolve surfaces are tessellated, so STEP output is a faceted
-          B-rep.
+          <strong>Threads, wrap &amp; emboss, custom blend, solid patch, NURBS/swept-surface STEP
+          import, materials library, cloud sync and collaboration</strong> are not implemented —
+          there is no server and no OCCT-class kernel here. Fillet and revolve surfaces are
+          tessellated, so STEP/3MF output describes facets.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------------- drawing --------------------------------- */
+
+const DRAWING_VIEWS: { id: DrawingViewName; label: string }[] = [
+  { id: 'front', label: 'Front' },
+  { id: 'top', label: 'Top' },
+  { id: 'right', label: 'Right' },
+  { id: 'iso', label: 'Isometric' },
+];
+
+/**
+ * 2D drawing sheet: the model is projected into orthographic views with true
+ * hidden-line removal, annotated with overall dimensions and a title block, and
+ * written as SVG, PDF or DXF.
+ */
+export function DrawingPanel() {
+  const s = S.useApp();
+  const [views, setViews] = useState<DrawingViewName[]>(['front', 'top', 'right', 'iso']);
+  const [scale, setScale] = useState(1);
+  const [title, setTitle] = useState(s.doc.name);
+  const [partNumber, setPartNumber] = useState('SHP-001');
+  const [revision, setRevision] = useState('A');
+  const [material, setMaterial] = useState('Aluminium 6061');
+  const [projection, setProjection] = useState<'third' | 'first'>('third');
+
+  const bodies = s.evalResult.bodies.filter((b) => !b.hidden);
+  const sheet = useMemo(() => {
+    if (!bodies.length) return null;
+    return buildDrawingSheet(bodies, {
+      views: views.length ? views : ['front'],
+      scale,
+      title,
+      partNumber,
+      revision,
+      material,
+      projection,
+      units: s.doc.units,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.evalResult, s.doc.units, views, scale, title, partNumber, revision, material, projection]);
+
+  const hidden = sheet
+    ? sheet.views.reduce((a, v) => a + v.lines.filter((l) => l.hidden).length, 0)
+    : 0;
+
+  const toggleView = (id: DrawingViewName) => {
+    setViews((cur) =>
+      cur.includes(id) ? (cur.length > 1 ? cur.filter((v) => v !== id) : cur) : [...cur, id],
+    );
+  };
+
+  const exportSheet = (format: 'svg' | 'pdf' | 'dxf') => {
+    if (!sheet) return;
+    const name = `${s.doc.name}-drawing`;
+    if (format === 'svg') {
+      download(new Blob([drawingSVG(sheet)], { type: 'image/svg+xml' }), `${name}.svg`);
+    } else if (format === 'pdf') {
+      download(drawingPDF(sheet), `${name}.pdf`);
+    } else {
+      download(new Blob([drawingDXF(sheet)], { type: 'application/dxf' }), `${name}.dxf`);
+    }
+    S.toast(`Drawing exported as ${format.toUpperCase()}`);
+  };
+
+  return (
+    <div className="panel wide">
+      <div className="panel-head">
+        <span>
+          Drawing <span className="sub">A3</span>
+        </span>
+        <button className="icon-btn" onClick={() => S.store.set({ panel: 'none' })}>
+          <Icon name="close" size={16} />
+        </button>
+      </div>
+      <div className="panel-body">
+        {!bodies.length ? (
+          <div className="hint-text">Build a body first — a drawing needs geometry.</div>
+        ) : null}
+
+        <div className="panel-section-title">Views</div>
+        <div className="chips-row">
+          {DRAWING_VIEWS.map((v) => (
+            <button
+              key={v.id}
+              className={`format-btn ${views.includes(v.id) ? 'on' : ''}`}
+              onClick={() => toggleView(v.id)}
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="panel-section-title">Sheet</div>
+        <div className="field">
+          <label>Scale</label>
+          <select value={scale} onChange={(e) => setScale(Number(e.target.value))}>
+            <option value={1}>1:1</option>
+            <option value={2}>1:2</option>
+            <option value={5}>1:5</option>
+            <option value={10}>1:10</option>
+          </select>
+        </div>
+        <div className="field">
+          <label>Projection</label>
+          <select
+            value={projection}
+            onChange={(e) => setProjection(e.target.value as 'third' | 'first')}
+          >
+            <option value="third">Third angle</option>
+            <option value="first">First angle</option>
+          </select>
+        </div>
+        <div className="field">
+          <label>Title</label>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>Part number</label>
+          <input value={partNumber} onChange={(e) => setPartNumber(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>Material</label>
+          <input value={material} onChange={(e) => setMaterial(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>Revision</label>
+          <input value={revision} onChange={(e) => setRevision(e.target.value)} />
+        </div>
+
+        <div className="panel-section-title">Preview</div>
+        <div className="stat">
+          <span>Views</span>
+          <span>{sheet?.views.length ?? 0}</span>
+        </div>
+        <div className="stat">
+          <span>Visible / hidden edges</span>
+          <span>
+            {sheet ? sheet.views.reduce((a, v) => a + v.lines.filter((l) => !l.hidden).length, 0) : 0}
+            {' / '}
+            {hidden}
+          </span>
+        </div>
+        <div className="stat">
+          <span>Sheet</span>
+          <span>420 × 297 mm</span>
+        </div>
+
+        <div className="panel-section-title">Export</div>
+        <div className="formats">
+          <button className="format-btn" disabled={!sheet} onClick={() => exportSheet('svg')}>
+            SVG
+          </button>
+          <button className="format-btn" disabled={!sheet} onClick={() => exportSheet('pdf')}>
+            PDF
+          </button>
+          <button className="format-btn" disabled={!sheet} onClick={() => exportSheet('dxf')}>
+            DXF
+          </button>
+        </div>
+        <div className="hint-text">
+          Hidden edges are dashed and removed against the whole model. Dimensions are the overall
+          width and height of each view; the title block carries scale, projection, material and
+          revision.
         </div>
       </div>
     </div>

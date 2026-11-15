@@ -304,6 +304,50 @@ export function sketchRegions(sk: Sketch): Region2[] {
   return buildRegions(sketchLoops(sk));
 }
 
+/**
+ * Open chains in the sketch, in drawing order. Used as sweep paths: every
+ * non-construction open entity is sampled and consecutive ends are stitched.
+ * Construction geometry is included on purpose, so a centreline can be a path.
+ */
+export function sketchOpenChains(sk: Sketch): Vec2[][] {
+  const tol = 1e-3;
+  const chains: Vec2[][] = [];
+  for (const e of sk.entities) {
+    if (e.kind === 'circle') continue;
+    if (e.kind === 'spline' && e.closed) continue;
+    const poly = sampleEntity(sk, e);
+    if (poly.length >= 2) chains.push(poly);
+  }
+  const same = (a: Vec2, b: Vec2) => dist2(a, b) < tol;
+  const used = new Array(chains.length).fill(false);
+  const result: Vec2[][] = [];
+  for (let i = 0; i < chains.length; i++) {
+    if (used[i]) continue;
+    used[i] = true;
+    let path = chains[i].slice();
+    let merged = true;
+    while (merged) {
+      merged = false;
+      for (let j = 0; j < chains.length; j++) {
+        if (used[j]) continue;
+        const c = chains[j];
+        const start = path[0];
+        const end = path[path.length - 1];
+        if (same(end, c[0])) path = path.concat(c.slice(1));
+        else if (same(end, c[c.length - 1])) path = path.concat(c.slice(0, -1).reverse());
+        else if (same(start, c[c.length - 1])) path = c.slice(0, -1).concat(path);
+        else if (same(start, c[0])) path = c.slice(0, -1).reverse().concat(path);
+        else continue;
+        used[j] = true;
+        merged = true;
+        break;
+      }
+    }
+    if (path.length >= 2) result.push(path);
+  }
+  return result;
+}
+
 export function regionContains(region: Region2, p: Vec2): boolean {
   if (!pointInPolygon(p, region.outer)) return false;
   for (const h of region.holes) if (pointInPolygon(p, h)) return false;

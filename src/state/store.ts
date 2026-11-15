@@ -3,10 +3,13 @@
 
 import { useSyncExternalStore } from 'react';
 import { Vec2, Vec3 } from '../kernel/vec';
-import { Solid } from '../kernel/solid';
+import { Solid, measureSolid } from '../kernel/solid';
+import { clipSolid } from '../kernel/ops';
 import { Sketch } from '../sketch/types';
 import { sketchRegions } from '../sketch/geometry';
 import { solveSketch } from '../sketch/solver';
+import { addArc, addCircle, addLine } from '../sketch/create';
+import { DxfShape } from '../kernel/importers';
 import {
   EvalBody,
   EvalResult,
@@ -34,12 +37,24 @@ export type SketchTool =
   | 'line'
   | 'polyline'
   | 'rect'
+  | 'slot'
+  | 'polygon'
   | 'circle'
   | 'arc'
   | 'spline'
   | 'auto'
   | 'dimension';
-export type Panel = 'none' | 'projects' | 'measure' | 'help';
+export type Panel = 'none' | 'projects' | 'measure' | 'help' | 'drawing';
+
+/** Display modes from the report: shaded, wireframe and X-Ray. */
+export type DisplayMode = 'shaded' | 'wireframe' | 'xray';
+export type SectionPlane = 'XY' | 'XZ' | 'YZ';
+
+export interface SectionState {
+  plane: SectionPlane;
+  /** Offset along the plane normal, in mm. */
+  offset: number;
+}
 
 export interface SelectionItem {
   kind: 'face' | 'edge' | 'body' | 'region' | 'sketchEntity' | 'sketch';
@@ -108,9 +123,17 @@ export interface AppState {
   pending: PendingOp | null;
   toast: { id: number; text: string } | null;
   autoLineArc: boolean;
+  /** Adds to the selection instead of replacing it (multi-profile loft, sets). */
+  additiveSelect: boolean;
   showGrid: boolean;
   snapEnabled: boolean;
   gridSize: number;
+  /** Side count of the polygon tool. */
+  polygonSides: number;
+  displayMode: DisplayMode;
+  section: SectionState | null;
+  /** When non-empty, only these bodies are shown (Isolate). */
+  isolatedBodyIds: string[];
   saving: boolean;
   desktop: boolean;
   /** Increments whenever geometry changes (drives the renderer). */
@@ -149,9 +172,14 @@ export const store = {
     pending: null,
     toast: null,
     autoLineArc: true,
+    additiveSelect: false,
     showGrid: true,
     snapEnabled: true,
     gridSize: 1,
+    polygonSides: 6,
+    displayMode: 'shaded' as DisplayMode,
+    section: null as SectionState | null,
+    isolatedBodyIds: [] as string[],
     saving: false,
     desktop: false,
     geometryVersion: 1,
@@ -419,6 +447,52 @@ export function beginSketch(planeId: 'XY' | 'XZ' | 'YZ' | 'face', face?: Selecti
     panel: store.state.panel === 'projects' ? 'none' : store.state.panel,
   });
   return sketch.id;
+}
+
+/**
+ * Turn imported DXF geometry into a real sketch on the XY plane: each LINE,
+ * CIRCLE and ARC becomes an editable, constrainable sketch entity, not a mesh.
+ */
+export function addDXFSketch(shapes: DxfShape[], name = 'Imported DXF') {
+  const draft: Sketch = {
+    id: uid('sk'),
+    name,
+    plane: { origin: [0, 0, 0], u: [1, 0, 0], v: [0, 1, 0], n: [0, 0, 1] },
+    planeLabel: 'XY',
+    points: {},
+    entities: [],
+    constraints: [],
+    visible: true,
+  };
+  for (const shape of shapes) {
+    if (shape.kind === 'line') addLine(draft, shape.a, shape.b);
+    else if (shape.kind === 'circle') addCircle(draft, shape.c, shape.r);
+    else addArc(draft, shape.a, shape.b, shape.mid);
+  }
+  if (!draft.entities.length) {
+    toast('No LINE / CIRCLE / ARC / POLYLINE geometry in that DXF');
+    return;
+  }
+  const feature: SketchFeature = {
+    id: uid('ft'),
+    name,
+    kind: 'sketch',
+    sketchId: draft.id,
+  };
+  commit({
+    mutate: (doc) => {
+      doc.sketches.push(draft);
+      doc.features.push(feature as Feature);
+    },
+    label: 'sketch:import-dxf',
+  });
+  store.set({
+    mode: 'select',
+    activeSketchId: null,
+    selection: [],
+    visibleSketchIds: [...store.state.visibleSketchIds, draft.id],
+  });
+  toast(`Imported ${draft.entities.length} DXF entities as a sketch`);
 }
 
 /** Apply an edit to the active sketch and re-solve its constraints. */
@@ -715,6 +789,8 @@ export async function createProject() {
     pending: null,
     panel: 'none',
     visibleSketchIds: [],
+    isolatedBodyIds: [],
+    section: null,
   });
   void persist(false);
 }
@@ -739,6 +815,8 @@ export async function openProject(id: string) {
     pending: null,
     panel: 'none',
     visibleSketchIds: [],
+    isolatedBodyIds: [],
+    section: null,
   });
   toast(`Opened “${doc.name}”`);
 }
@@ -832,6 +910,64 @@ export function selectedBodies(): EvalBody[] {
     if (sel.bodyId) ids.add(sel.bodyId);
   }
   return s.evalResult.bodies.filter((b) => ids.has(b.id));
+}
+
+/* ------------------------------ view controls ----------------------------- */
+
+export const sectionAxis = (plane: SectionPlane): Vec3 =>
+  plane === 'XY' ? [0, 0, 1] : plane === 'XZ' ? [0, 1, 0] : [1, 0, 0];
+
+/**
+ * The bodies the viewport should draw: Isolate filters the set, and an active
+ * section view really cuts the B-rep (so the cut face is capped, not hollow).
+ */
+export function renderBodies(): EvalBody[] {
+  const s = store.state;
+  let bodies = s.evalResult.bodies;
+  if (s.isolatedBodyIds.length) {
+    bodies = bodies.filter((b) => s.isolatedBodyIds.includes(b.id));
+  }
+  if (s.section) {
+    const n = sectionAxis(s.section.plane);
+    bodies = bodies.map((b) => {
+      const cut = clipSolid(b.solid, n, s.section!.offset, false);
+      return cut.faces.length ? { ...b, solid: cut, measure: measureSolid(cut) } : b;
+    });
+  }
+  return bodies;
+}
+
+export function setDisplayMode(displayMode: DisplayMode) {
+  store.set({ displayMode });
+}
+
+export function toggleSection() {
+  const s = store.state;
+  if (s.section) {
+    store.set({ section: null });
+    return;
+  }
+  // Start the section through the middle of the model on the XY plane.
+  const bodies = s.evalResult.bodies.filter((b) => !b.hidden);
+  let mid = 0;
+  if (bodies.length) {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const b of bodies) {
+      lo = Math.min(lo, b.measure.bboxMin[2]);
+      hi = Math.max(hi, b.measure.bboxMax[2]);
+    }
+    mid = (lo + hi) / 2;
+  }
+  store.set({ section: { plane: 'XY', offset: Math.round(mid * 10) / 10 } });
+}
+
+export function isolateBodies(ids: string[]) {
+  store.set({ isolatedBodyIds: ids });
+}
+
+export function clearIsolate() {
+  store.set({ isolatedBodyIds: [] });
 }
 
 export function selectionSolids(): Solid[] {

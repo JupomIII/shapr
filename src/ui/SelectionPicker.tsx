@@ -39,7 +39,9 @@ export function SelectionPicker() {
   const top = Math.max(10, Math.min(window.innerHeight - height - 10, picker.y + 16));
 
   const choose = (entry: PickEntry) => {
-    S.selectItem(entry.item);
+    // Keep the additive intent: picking a profile over a face/body while the
+    // Add toggle is on must not throw the previous profiles away.
+    S.selectItem(entry.item, S.store.state.additiveSelect);
     S.setHover(null);
     S.store.set({ picker: null });
   };

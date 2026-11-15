@@ -87,6 +87,7 @@ export class Viewport {
   private gridGroup = new THREE.Group();
 
   private bodyMeshes = new Map<string, { mesh: THREE.Mesh; edges: THREE.LineSegments; body: EvalBody }>();
+  private displayMode: 'shaded' | 'wireframe' | 'xray' = 'shaded';
   private edgeCache = new Map<string, Edge[]>();
   private cam: CameraState = {
     target: new THREE.Vector3(0, 0, 10),
@@ -286,6 +287,11 @@ export class Viewport {
     }
   }
 
+  setDisplayMode(mode: 'shaded' | 'wireframe' | 'xray') {
+    if (this.displayMode === mode) return;
+    this.displayMode = mode;
+  }
+
   setBodies(bodies: EvalBody[], version: number) {
     const keep = new Set(bodies.map((b) => `${b.id}:${version}`));
     for (const [key, entry] of this.bodyMeshes) {
@@ -303,23 +309,43 @@ export class Viewport {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
       geo.setAttribute('normal', new THREE.BufferAttribute(data.normals, 3));
-      const mat = new THREE.MeshStandardMaterial({
-        color: COLORS.body,
-        metalness: 0.04,
-        roughness: 0.55,
-        flatShading: true,
-        side: THREE.FrontSide,
-      });
+      const bodyColor = new THREE.Color(body.color ?? COLORS.body);
+      const mat =
+        this.displayMode === 'wireframe'
+          ? new THREE.MeshBasicMaterial({ color: bodyColor, wireframe: true })
+          : this.displayMode === 'xray'
+            ? new THREE.MeshStandardMaterial({
+                color: bodyColor,
+                metalness: 0.06,
+                roughness: 0.35,
+                flatShading: true,
+                transparent: true,
+                opacity: 0.22,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+              })
+            : new THREE.MeshStandardMaterial({
+                color: bodyColor,
+                metalness: 0.04,
+                roughness: 0.55,
+                flatShading: true,
+                side: THREE.FrontSide,
+              });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.userData.bodyId = body.id;
       mesh.userData.faceIds = data.faceIds;
+      mesh.renderOrder = this.displayMode === 'xray' ? 1 : 0;
       this.bodyGroup.add(mesh);
 
       const edgeGeo = new THREE.BufferGeometry();
       edgeGeo.setAttribute('position', new THREE.BufferAttribute(buildEdgeSegments(body.solid), 3));
       const edges = new THREE.LineSegments(
         edgeGeo,
-        new THREE.LineBasicMaterial({ color: COLORS.bodyEdge, transparent: true, opacity: 0.7 }),
+        new THREE.LineBasicMaterial({
+          color: COLORS.bodyEdge,
+          transparent: true,
+          opacity: this.displayMode === 'xray' ? 0.28 : 0.7,
+        }),
       );
       this.bodyGroup.add(edges);
       this.bodyMeshes.set(body.id, { mesh, edges, body });
@@ -892,6 +918,41 @@ export class Viewport {
     const perp = new THREE.Vector3().crossVectors(d, toCam);
     const len = Math.max(0.15, Math.abs(Math.sin(Math.acos(Math.min(1, Math.abs(d.dot(toCam)))))));
     return (worldPerPx * len) / Math.max(0.15, perp.length());
+  }
+
+  /**
+   * Render the viewport at a presentation resolution. Everything is re-rendered
+   * at that size, so the PNG is a true high-resolution capture rather than an
+   * upscaled viewport grab.
+   */
+  captureImage(maxWidth = 3840): { dataUrl: string; width: number; height: number } | null {
+    try {
+      const cssW = this.container.clientWidth || 1280;
+      const cssH = this.container.clientHeight || 800;
+      const ratio = cssH / cssW;
+      const width = Math.max(640, Math.min(7680, Math.round(maxWidth)));
+      const height = Math.round(width * ratio);
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      this.renderer.setPixelRatio(1);
+      this.renderer.setSize(width, height, false);
+      this.persp.aspect = width / height;
+      this.persp.updateProjectionMatrix();
+      this.ortho.left = (-this.ortho.top * width) / height;
+      this.ortho.right = (this.ortho.top * width) / height;
+      this.ortho.updateProjectionMatrix();
+      this.updateCamera();
+      this.renderer.render(this.scene, this.camera);
+      const dataUrl = this.renderer.domElement.toDataURL('image/png');
+      this.renderer.setPixelRatio(dpr);
+      this.renderer.setSize(cssW, cssH, false);
+      this.persp.aspect = cssW / cssH;
+      this.persp.updateProjectionMatrix();
+      this.resize();
+      this.invalidate();
+      return { dataUrl, width, height };
+    } catch {
+      return null;
+    }
   }
 
   captureThumbnail(): string | null {

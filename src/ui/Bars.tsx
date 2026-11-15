@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { viewportRef } from '../render/viewportRef';
+import { downloadDataUrl } from '../kernel/exporters';
 import { measureSolid } from '../kernel/solid';
 import { UNIT_FACTOR } from '../model/types';
 import * as S from '../state/store';
@@ -10,7 +11,8 @@ import { Icon, IconName } from './Icons';
 const fmt = (v: number, digits = 2): string => {
   if (!isFinite(v)) return '0';
   const s = v.toFixed(digits);
-  return s.replace(/\.?0+$/, '') || '0';
+  // Only trim zeros that belong to the decimal part: 12240 must not become 1224.
+  return s.includes('.') ? s.replace(/\.?0+$/, '') || '0' : s;
 };
 
 const fmtMeasure = (v: number): string => fmt(v, Math.abs(v) >= 1000 ? 0 : 2);
@@ -85,6 +87,8 @@ const TOOL_LABELS: Record<S.SketchTool, string> = {
   line: 'Line',
   polyline: 'Polyline',
   rect: 'Rectangle',
+  slot: 'Slot',
+  polygon: 'Polygon',
   circle: 'Circle',
   arc: 'Arc',
   spline: 'Spline',
@@ -170,6 +174,26 @@ export function TopBar() {
               <Icon name="measure" size={15} />
               Measure
             </button>
+            <button
+              className="menu-row"
+              onClick={() => {
+                S.store.set({ panel: 'drawing' });
+                setMenu(false);
+              }}
+            >
+              <Icon name="drawing" size={15} />
+              2D drawing
+            </button>
+            <button
+              className="menu-row"
+              onClick={() => {
+                S.toggleSection();
+                setMenu(false);
+              }}
+            >
+              <Icon name="section" size={15} />
+              {s.section ? 'End section view' : 'Section view'}
+            </button>
             <div className="menu-sep" />
             <button
               className={`menu-row ${persp ? 'on' : ''}`}
@@ -229,6 +253,8 @@ const SKETCH_TOOLS: { id: S.SketchTool; icon: IconName; label: string }[] = [
   { id: 'spline', icon: 'spline', label: 'Spline' },
   { id: 'polyline', icon: 'polyline', label: 'Polyline' },
   { id: 'rect', icon: 'rect', label: 'Rectangle' },
+  { id: 'slot', icon: 'slot', label: 'Slot' },
+  { id: 'polygon', icon: 'polygon', label: 'Polygon' },
   { id: 'circle', icon: 'circle', label: 'Circle' },
   { id: 'arc', icon: 'arc', label: 'Arc' },
   { id: 'line', icon: 'line', label: 'Line' },
@@ -249,6 +275,27 @@ function SketchDock() {
           onClick={() => S.store.set({ sketchTool: t.id, selection: [] })}
         />
       ))}
+      {s.sketchTool === 'polygon' ? (
+        <div className="side-count">
+          <button
+            className="icon-btn"
+            title="Fewer sides"
+            onClick={() => S.store.set({ polygonSides: Math.max(3, s.polygonSides - 1) })}
+          >
+            <Icon name="minus" size={14} />
+          </button>
+          <span>
+            {s.polygonSides} <small>sides</small>
+          </span>
+          <button
+            className="icon-btn"
+            title="More sides"
+            onClick={() => S.store.set({ polygonSides: Math.min(16, s.polygonSides + 1) })}
+          >
+            <Icon name="plus" size={14} />
+          </button>
+        </div>
+      ) : null}
       <div className="act-divider" />
       <Act
         icon="snap"
@@ -278,6 +325,23 @@ function ContextDock() {
   const sel = s.selection[0];
   if (!sel) return null;
 
+  // A section view is a view: editing geometry under it would reference faces
+  // that only exist in the cut, so the dock offers the way back instead.
+  if (s.section) {
+    return (
+      <div className="dock-left">
+        <Act icon="close" label="Deselect" onClick={() => S.setSelection([])} />
+        <Act icon="measure" label="Measure" onClick={() => OPS.measureSelection()} />
+        <Act
+          icon="section"
+          label="End section"
+          primary
+          onClick={() => S.store.set({ section: null })}
+        />
+      </div>
+    );
+  }
+
   const acts: JSX.Element[] = [
     <Act
       key="deselect"
@@ -286,12 +350,30 @@ function ContextDock() {
       onClick={() => S.setSelection([])}
     />,
   ];
+  const regions = s.selection.filter((x) => x.kind === 'region');
 
   if (sel.kind === 'region') {
     acts.push(
       <Act key="x" icon="extrude" label="Extrude" primary onClick={() => OPS.startExtrude('new')} />,
       <Act key="c" icon="cut" label="Cut" onClick={() => OPS.extrudeCutThrough()} />,
       <Act key="r" icon="revolve" label="Revolve" onClick={() => OPS.startRevolve()} />,
+      <Act key="sw" icon="sweep" label="Sweep" onClick={() => OPS.startSweep()} />,
+      <Act
+        key="add"
+        icon="plus"
+        label="Add"
+        hint={s.additiveSelect ? 'On' : 'Shift'}
+        active={s.additiveSelect}
+        onClick={() => S.store.set({ additiveSelect: !s.additiveSelect })}
+      />,
+      <Act
+        key="lo"
+        icon="loft"
+        label="Loft"
+        hint={regions.length > 1 ? `${regions.length} profiles` : '2+ profiles'}
+        disabled={regions.length < 2}
+        onClick={() => OPS.startLoft()}
+      />,
       <Act key="m" icon="measure" label="Measure" onClick={() => OPS.measureSelection()} />,
     );
   } else if (sel.kind === 'face') {
@@ -303,6 +385,7 @@ function ContextDock() {
         primary
         onClick={() => OPS.startPushPull()}
       />,
+      <Act key="sh" icon="shell" label="Shell" hint="Open this face" onClick={() => OPS.startShell()} />,
       <Act key="s" icon="sketch" label="Sketch on face" onClick={() => S.beginSketch('face', sel)} />,
       <Act key="m" icon="measure" label="Measure" onClick={() => OPS.measureSelection()} />,
     );
@@ -310,11 +393,15 @@ function ContextDock() {
     acts.push(
       <Act key="f" icon="fillet" label="Fillet" primary onClick={() => OPS.startFillet()} />,
       <Act key="c" icon="chamfer" label="Chamfer" onClick={() => OPS.startChamfer()} />,
+      <Act key="sh" icon="shell" label="Shell" onClick={() => OPS.startShell()} />,
       <Act key="m" icon="measure" label="Measure" onClick={() => OPS.measureSelection()} />,
     );
   } else if (sel.kind === 'body') {
     acts.push(
+      <Act key="sh" icon="shell" label="Shell" primary hint="Hollow" onClick={() => OPS.startShell()} />,
+      <Act key="sp" icon="split" label="Split" onClick={() => OPS.startSplit()} />,
       <Act key="m" icon="measure" label="Measure" onClick={() => OPS.measureSelection()} />,
+      <Act key="iso" icon="isolate" label="Isolate" onClick={() => OPS.isolateSelection()} />,
       <Act key="h" icon="eyeOff" label="Hide" onClick={() => OPS.hideSelection()} />,
       <Act key="mi" icon="mirror" label="Mirror" onClick={() => OPS.mirrorSelected()} />,
       <Act key="pl" icon="pattern" label="Pattern" onClick={() => OPS.patternSelected('linear')} />,
@@ -572,6 +659,73 @@ export function ViewCubeOverlay() {
               <span className="k">F</span>
             </button>
             <div className="menu-sep" />
+            <div className="menu-title">Display</div>
+            {(
+              [
+                ['shaded', 'Shaded', 'cube'],
+                ['wireframe', 'Wireframe', 'wireframe'],
+                ['xray', 'X-Ray', 'xray'],
+              ] as const
+            ).map(([mode, label, icon]) => (
+              <button
+                key={mode}
+                className={`menu-row ${s.displayMode === mode ? 'on' : ''}`}
+                onClick={() => {
+                  S.setDisplayMode(mode);
+                  setSettings(false);
+                }}
+              >
+                <Icon name={icon} size={15} />
+                {label}
+                {s.displayMode === mode ? (
+                  <span className="tick">
+                    <Icon name="check" size={14} />
+                  </span>
+                ) : null}
+              </button>
+            ))}
+            <button
+              className={`menu-row ${s.section ? 'on' : ''}`}
+              onClick={() => {
+                S.toggleSection();
+                setSettings(false);
+              }}
+            >
+              <Icon name="section" size={15} />
+              {s.section ? 'End section view' : 'Section view'}
+              {s.section ? (
+                <span className="tick">
+                  <Icon name="check" size={14} />
+                </span>
+              ) : null}
+            </button>
+            <button
+              className="menu-row"
+              onClick={() => {
+                S.store.set({ panel: 'drawing' });
+                setSettings(false);
+              }}
+            >
+              <Icon name="drawing" size={15} />
+              2D drawing
+            </button>
+            <button
+              className="menu-row"
+              onClick={() => {
+                const shot = vp?.captureImage(3840);
+                if (!shot) {
+                  S.toast('Screenshot failed');
+                  return;
+                }
+                downloadDataUrl(shot.dataUrl, `${s.doc.name}-4k.png`);
+                S.toast(`Screenshot saved · ${shot.width}×${shot.height}`);
+                setSettings(false);
+              }}
+            >
+              <Icon name="camera" size={15} />
+              Screenshot 4K
+            </button>
+            <div className="menu-sep" />
             <button
               className="menu-row"
               onClick={() => {
@@ -585,6 +739,88 @@ export function ViewCubeOverlay() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+const sectionRange = (s: S.AppState): { lo: number; hi: number } => {
+  const idx = s.section ? (S.sectionAxis(s.section.plane)[0] ? 0 : S.sectionAxis(s.section.plane)[1] ? 1 : 2) : 2;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const b of s.evalResult.bodies) {
+    lo = Math.min(lo, b.measure.bboxMin[idx]);
+    hi = Math.max(hi, b.measure.bboxMax[idx]);
+  }
+  if (!isFinite(lo)) return { lo: -100, hi: 100 };
+  return { lo: Math.floor(lo * 2) / 2, hi: Math.ceil(hi * 2) / 2 };
+};
+
+/** Persistent indicators for the view-only modes, with a one-tap way out. */
+export function ViewStateChip() {
+  const s = S.useApp();
+  if (!s.section && !s.isolatedBodyIds.length) return null;
+  return (
+    <div className="view-chips">
+      {s.section ? (
+        <div className="view-chip wide">
+          <Icon name="section" size={14} />
+          <select
+            className="chip-select"
+            value={s.section.plane}
+            onChange={(e) => {
+              const plane = e.target.value as S.SectionPlane;
+              const axis = S.sectionAxis(plane);
+              const idx = axis[0] ? 0 : axis[1] ? 1 : 2;
+              let lo = Infinity;
+              let hi = -Infinity;
+              for (const b of s.evalResult.bodies) {
+                lo = Math.min(lo, b.measure.bboxMin[idx]);
+                hi = Math.max(hi, b.measure.bboxMax[idx]);
+              }
+              const mid = isFinite(lo) ? (lo + hi) / 2 : 0;
+              S.store.set({ section: { plane, offset: Math.round(mid * 10) / 10 } });
+            }}
+          >
+            <option value="XY">XY</option>
+            <option value="XZ">XZ</option>
+            <option value="YZ">YZ</option>
+          </select>
+          <input
+            className="chip-range"
+            type="range"
+            min={sectionRange(s).lo}
+            max={sectionRange(s).hi}
+            step={0.5}
+            value={s.section.offset}
+            onChange={(e) =>
+              S.store.set({
+                section: { ...s.section!, offset: parseFloat(e.target.value) },
+              })
+            }
+          />
+          <span className="num">
+            {fmt(s.section.offset, 1)} {s.doc.units}
+          </span>
+          <button
+            className="mini"
+            title="End section view"
+            onClick={() => S.store.set({ section: null })}
+          >
+            <Icon name="close" size={13} />
+          </button>
+        </div>
+      ) : null}
+      {s.isolatedBodyIds.length ? (
+        <div className="view-chip">
+          <Icon name="isolate" size={14} />
+          <span>
+            Isolated {s.isolatedBodyIds.length} of {s.evalResult.bodies.length}
+          </span>
+          <button className="mini" title="Show all bodies" onClick={() => S.clearIsolate()}>
+            <Icon name="close" size={13} />
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

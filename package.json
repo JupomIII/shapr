@@ -8,8 +8,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "npm run test:sketch",
-    "test:sketch": "esbuild scripts/sketch-check.ts --bundle --platform=node --format=esm --outfile=tmp/sketch-check.mjs --log-level=error && node tmp/sketch-check.mjs"
+    "test": "npm run test:sketch && npm run test:features",
+    "test:sketch": "esbuild scripts/sketch-check.ts --bundle --platform=node --format=esm --outfile=tmp/sketch-check.mjs --log-level=error && node tmp/sketch-check.mjs",
+    "test:features": "esbuild scripts/features-check.ts --bundle --platform=node --format=esm --outfile=tmp/features-check.mjs --log-level=error && node tmp/features-check.mjs"
   },
   "dependencies": {
     "earcut": "^3.0.1",

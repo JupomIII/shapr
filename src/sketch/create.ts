@@ -106,6 +106,53 @@ export const addRectangle = (draft: Sketch, a: Vec2, b: Vec2): RectResult => {
   return { lines: [l1, l2, l3, l4], width: x1 - x0, height: y1 - y0 };
 };
 
+/**
+ * Slot: a stadium profile from the drag vector. The drag defines the overall
+ * length; the rounded ends get a quarter of that as radius. Both ends are true
+ * arcs and both flanks are lines, so the slot solves and extrudes like any
+ * other profile.
+ */
+export const addSlot = (draft: Sketch, a: Vec2, b: Vec2): string[] => {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-4) return [];
+  const dir: Vec2 = [dx / len, dy / len];
+  const perp: Vec2 = [-dir[1], dir[0]];
+  const r = len * 0.25;
+  const c0: Vec2 = [a[0] + dir[0] * r, a[1] + dir[1] * r];
+  const c1: Vec2 = [a[0] + dir[0] * (len - r), a[1] + dir[1] * (len - r)];
+  const p = (c: Vec2, s: number): Vec2 => [c[0] + perp[0] * r * s, c[1] + perp[1] * r * s];
+  const l1 = addLine(draft, p(c0, 1), p(c1, 1));
+  const a1 = addArc(draft, p(c1, 1), p(c1, -1), [c1[0] + dir[0] * r, c1[1] + dir[1] * r]);
+  const l2 = addLine(draft, p(c1, -1), p(c0, -1));
+  const a2 = addArc(draft, p(c0, -1), p(c0, 1), [c0[0] - dir[0] * r, c0[1] - dir[1] * r]);
+  addConstraint(draft, 'equal', [l1, l2]);
+  return [l1, a1, l2, a2];
+};
+
+/** Regular polygon: centre + a vertex define radius and orientation. */
+export const addPolygon = (
+  draft: Sketch,
+  center: Vec2,
+  vertex: Vec2,
+  sides: number,
+): string[] => {
+  const n = Math.max(3, Math.min(16, Math.round(sides)));
+  const r = dist2(center, vertex);
+  if (r < 1e-4) return [];
+  const a0 = Math.atan2(vertex[1] - center[1], vertex[0] - center[0]);
+  const pts: Vec2[] = [];
+  for (let i = 0; i < n; i++) {
+    const ang = a0 + (i / n) * Math.PI * 2;
+    pts.push([center[0] + Math.cos(ang) * r, center[1] + Math.sin(ang) * r]);
+  }
+  const ids: string[] = [];
+  for (let i = 0; i < n; i++) ids.push(addLine(draft, pts[i], pts[(i + 1) % n]));
+  for (let i = 0; i + 1 < ids.length; i++) addConstraint(draft, 'equal', [ids[i], ids[i + 1]]);
+  return ids;
+};
+
 /* ------------------------------ recognition ------------------------------- */
 
 export type Recognized =

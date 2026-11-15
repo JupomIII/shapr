@@ -346,6 +346,185 @@ export function importOBJ(text: string): { positions: Vec3[] } {
   return { positions: out };
 }
 
+/* ---------------------------------- 3MF ---------------------------------- */
+
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[i] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(bytes: Uint8Array): number {
+  let c = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+/** Minimal ZIP writer (stored entries), enough for an OPC package like 3MF. */
+function zipStore(files: { name: string; data: Uint8Array }[]): Blob {
+  const enc = new TextEncoder();
+  const locals: Uint8Array[] = [];
+  const centrals: Uint8Array[] = [];
+  let offset = 0;
+  for (const file of files) {
+    const nameBytes = enc.encode(file.name);
+    const crc = crc32(file.data);
+    const local = new Uint8Array(30 + nameBytes.length + file.data.length);
+    const lv = new DataView(local.buffer);
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint16(4, 20, true);
+    lv.setUint16(6, 0, true);
+    lv.setUint16(8, 0, true);
+    lv.setUint16(10, 0, true);
+    lv.setUint16(12, 0x21, true);
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, file.data.length, true);
+    lv.setUint32(22, file.data.length, true);
+    lv.setUint16(26, nameBytes.length, true);
+    lv.setUint16(28, 0, true);
+    local.set(nameBytes, 30);
+    local.set(file.data, 30 + nameBytes.length);
+    locals.push(local);
+
+    const central = new Uint8Array(46 + nameBytes.length);
+    const cv = new DataView(central.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0, true);
+    cv.setUint16(10, 0, true);
+    cv.setUint16(12, 0, true);
+    cv.setUint16(14, 0x21, true);
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, file.data.length, true);
+    cv.setUint32(24, file.data.length, true);
+    cv.setUint16(28, nameBytes.length, true);
+    cv.setUint16(30, 0, true);
+    cv.setUint16(32, 0, true);
+    cv.setUint16(34, 0, true);
+    cv.setUint16(36, 0, true);
+    cv.setUint32(38, 0, true);
+    cv.setUint32(42, offset, true);
+    central.set(nameBytes, 46);
+    centrals.push(central);
+
+    offset += local.length;
+  }
+  const centralSize = centrals.reduce((a, c) => a + c.length, 0);
+  const end = new Uint8Array(22);
+  const ev = new DataView(end.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(8, files.length, true);
+  ev.setUint16(10, files.length, true);
+  ev.setUint32(12, centralSize, true);
+  ev.setUint32(16, offset, true);
+  const parts: BlobPart[] = [];
+  for (const l of locals) parts.push(new Uint8Array(l));
+  for (const c of centrals) parts.push(new Uint8Array(c));
+  parts.push(end);
+  return new Blob(parts, { type: 'model/3mf' });
+}
+
+const xmlEscape = (s: string): string =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+const hex6 = (color: string | undefined): string => {
+  const fallback = '#CCD0D4';
+  const c = (color ?? fallback).trim();
+  const m = /^#?([0-9a-f]{6})$/i.exec(c);
+  return `#${(m ? m[1] : fallback.slice(1)).toUpperCase()}FF`;
+};
+
+/**
+ * 3MF export with one object per body and a base material carrying its colour,
+ * so slicers that read 3MF colours (including multi-colour printers) get the
+ * materials the document shows.
+ */
+export function export3MF(
+  bodies: { name: string; solid: Solid; color?: string }[],
+  name = 'part',
+): { data: Blob; filename: string } {
+  const resources: string[] = [];
+  const build: string[] = [];
+  let id = 1;
+  bodies.forEach((body, bi) => {
+    const tris = facesToTris(body.solid);
+    if (!tris.length) return;
+    const verts: Vec3[] = [];
+    const index = new Map<string, number>();
+    const vid = (p: Vec3): number => {
+      const k = keyOfPoint(p);
+      const found = index.get(k);
+      if (found !== undefined) return found;
+      const i = verts.length;
+      verts.push(p);
+      index.set(k, i);
+      return i;
+    };
+    const faces = tris.map((t) => [vid(t[0]), vid(t[1]), vid(t[2])] as [number, number, number]);
+
+    const matId = id++;
+    resources.push(
+      `<basematerials id="${matId}"><base name="${xmlEscape(body.name)}" displaycolor="${hex6(body.color)}"/></basematerials>`,
+    );
+    const objectId = id++;
+    const vertexXml = verts
+      .map((p) => `<vertex x="${fmt(p[0], 5)}" y="${fmt(p[1], 5)}" z="${fmt(p[2], 5)}"/>`)
+      .join('');
+    const triangleXml = faces
+      .map(([a, b, c]) => `<triangle v1="${a}" v2="${b}" v3="${c}" pid="${matId}" p1="0"/>`)
+      .join('');
+    resources.push(
+      `<object id="${objectId}" type="model" pid="${matId}" pindex="0" name="${xmlEscape(body.name)}">` +
+        `<mesh><vertices>${vertexXml}</vertices><triangles>${triangleXml}</triangles></mesh></object>`,
+    );
+    build.push(`<item objectid="${objectId}"/>`);
+    void bi;
+  });
+
+  const model =
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">' +
+    `<metadata name="Title">${xmlEscape(name)}</metadata>` +
+    `<resources>${resources.join('')}</resources>` +
+    `<build>${build.join('')}</build>` +
+    '</model>';
+
+  const contentTypes =
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>' +
+    '</Types>';
+
+  const rels =
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>' +
+    '</Relationships>';
+
+  const enc = new TextEncoder();
+  const data = zipStore([
+    { name: '[Content_Types].xml', data: enc.encode(contentTypes) },
+    { name: '_rels/.rels', data: enc.encode(rels) },
+    { name: '3D/3dmodel.model', data: enc.encode(model) },
+  ]);
+  return { data, filename: `${name}.3mf` };
+}
+
+export function downloadDataUrl(dataUrl: string, filename: string) {
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 export function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

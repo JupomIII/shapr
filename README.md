@@ -64,12 +64,15 @@ A sketch tells you what it is before you leave it, the way Shapr3D does:
 - Pointer Events with pen pressure / tilt fields captured, coalesced events used for smooth
   strokes, pointer capture, and `touch-action: none` to stop scrolling, text selection and callouts.
 - Pre-selection hover highlighting, face / edge / body selection, contextual action bar.
+- **Additive selection**: Shift with a mouse, or the **Add** toggle in the dock, keeps the
+  previous items instead of replacing them — that is how two profiles are gathered for a loft.
 
 **Sketching**
 
 - Sketch on XY / XZ / YZ or any planar face. Entering a sketch turns the camera to face the plane.
-- Tools: line, connected polyline, rectangle, circle, three-point arc, spline, and freehand
-  automatic shape recognition (rectangle / circle / line / arc / spline).
+- Tools: line, connected polyline, rectangle, slot, regular polygon (3–16 sides, equal-constrained),
+  circle, three-point arc, spline, and freehand automatic shape recognition
+  (rectangle / circle / line / arc / spline).
 - Automatic Line/Arc: a quick side-to-side wrist shake while drawing switches the segment to an arc.
 - Snapping to endpoints, midpoints, centres, the grid, plus horizontal / vertical / parallel /
   perpendicular inference.
@@ -84,8 +87,10 @@ A sketch tells you what it is before you leave it, the way Shapr3D does:
 
 - Planar B-rep kernel: faces with outer and inner loops in world space, exact volume / area /
   centroid / bounding box computed from topology.
-- Extrude (new body, join, cut, intersect, through-all), revolve, push/pull (offset face),
-  chamfer and fillet, mirror, linear and circular patterns.
+- Extrude (new body, join, cut, intersect, through-all, **draft angle**), revolve, **sweep**
+  (profile along an open path sketch, with twist and end scale), **loft** (two or more profiles,
+  optional periodic), push/pull (offset face), **shell** (uniform wall, faces opened),
+  chamfer and fillet, **split body** (plane, both halves kept), mirror, linear and circular patterns.
 - Booleans via BSP CSG with coplanar-face merging and T-junction removal, so result bodies have
   clean faces with holes rather than triangle soup.
 - Chamfer is an exact single planar cut; fillet approximates the true cylinder with tangent planes
@@ -95,6 +100,21 @@ A sketch tells you what it is before you leave it, the way Shapr3D does:
   features elsewhere in the body.
 - Direct manipulation: drag a profile to extrude, drag a face to offset it, drag while a fillet is
   pending to change the radius. Every operation shows a live preview and an editable numeric chip.
+
+**Inspection, display and documentation**
+
+- **Display modes**: Shaded, Wireframe and **X-Ray**, switchable from the view settings.
+- **Section view**: cuts every visible body at an adjustable XY / XZ / YZ plane and caps the cut
+  with real material, so internals read correctly. Modelling is paused while it is on (the cut
+  faces exist only in the view), and the chip offers the way back.
+- **Isolate**: hides every other body; the selection still drives the dock.
+- **Screenshot**: 4K PNG rendered at capture resolution, not an upscaled grab.
+- **Body colours**: assign a colour to any body-creating feature; the viewport and the 3MF export
+  use the same palette.
+- **2D drawings**: A3 sheet with Front / Top / Right / Isometric views, true **hidden-line removal**
+  against the whole model, overall dimensions, and a title block (title, part number, material,
+  revision, scale, first/third angle, units, sheet, date). Exported as **SVG, PDF** (vector) or
+  **DXF** (Visible / HIDDEN layers).
 
 **Parametric history**
 
@@ -109,8 +129,10 @@ A sketch tells you what it is before you leave it, the way Shapr3D does:
 
 - Projects in IndexedDB (autosave, manual save, rename, duplicate, delete, recent list, thumbnails).
   The document is serialized as parametric data — never as a Three.js scene.
-- Export: STL (binary), OBJ, STEP (AP214 faceted B-rep), DXF and SVG of sketches.
-- Import: STL and OBJ meshes as dumb bodies.
+- Export: STL (binary), OBJ, STEP (AP214 faceted B-rep), **3MF with one object per body and its
+  colour**, DXF and SVG of sketches, and **2D drawing sheets** (see below).
+- Import: STL and OBJ meshes as dumb bodies, **DXF as an editable sketch** (LINE, CIRCLE, ARC,
+  LWPOLYLINE, POLYLINE, with `$INSUNITS` scaling) and **faceted STEP as a body**.
 
 **Deployment**
 
@@ -151,7 +173,9 @@ src/
     csg.ts       BSP CSG + half-space clipping
     solid.ts     planar B-rep, triangle<->B-rep rebuild, edges, measurement
     ops.ts       extrude, revolve, booleans, chamfer, fillet, push/pull, patterns
-    exporters.ts STL / OBJ / STEP / DXF / SVG writers, STL / OBJ readers
+    exporters.ts STL / OBJ / STEP / 3MF / DXF / SVG writers, STL / OBJ readers, ZIP writer
+    importers.ts DXF sketch reader, faceted STEP reader
+    drawing.ts   2D views, hidden-line removal, SVG / PDF / DXF sheet writers
   sketch/
     types.ts     points + entities + constraints
     geometry.ts  sampling, loop detection, regions, hit testing, snapping
@@ -188,20 +212,33 @@ interaction layer.
 
 ## Limitations (visible in the UI as unavailable)
 
-- Loft, sweep, shell, draft, split body / split face, 3MF export and STEP/DXF import are **not**
-  implemented. Buttons for these are disabled and labelled as unavailable; nothing pretends to work.
+- **Threads, wrap & emboss, custom blend, solid patch (fill), split face, replace face, projection
+  curves, materials library, decals, generative rendering, cloud sync, Teamspaces and
+  collaboration threads are not implemented.** There is no server and no OCCT-class kernel here,
+  so nothing pretends to work.
+- STEP import reads faceted B-rep geometry (`POLY_LOOP` boundaries). Files that describe analytic
+  or NURBS surfaces are rejected with an explanation rather than producing an empty body.
+- `Shell` builds its cavity from the body's face planes, so it is exact for simply-shaped planar
+  bodies; a wall thicker than the body fails with a feature error.
+- `Loft` stitches outer loops (holes in a loft profile are not carried through) and `Sweep`
+  follows the longest open chain in the path sketch. Profiles on one and the same plane are
+  refused with a toast — there is nothing to loft between them.
+- Section view only changes what is drawn: the status bar and the feature panel keep reporting the
+  document values, not the cut ones.
 - Fillets require a convex edge between two planar faces; concave and freeform edges are rejected
   with a feature error instead of producing bad geometry.
-- Revolve and fillet surfaces are tessellated, so exported STEP files describe facets.
+- Revolve and fillet surfaces are tessellated, so exported STEP/3MF files describe facets.
 
 ## Development
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
-npm run build      # type-check + production build into dist/
-npm run preview    # serve the production build
-node scripts/kernel-check.ts   # (bundled with esbuild) kernel numeric checks
+npm run dev          # http://localhost:5173
+npm run build        # type-check + production build into dist/
+npm run preview      # serve the production build
+npm run typecheck    # tsc --noEmit
+npm test             # sketch + feature checks (bundled with esbuild, run in node)
+npm run test:features  # shell / sweep / loft / split / draft / 3MF / imports / drawings
 ```
 
 The kernel self-check prints analytic-vs-computed volumes for extrusion, booleans, chamfer, fillet,
@@ -231,6 +268,18 @@ Automated (kernel, node):
 - Localized fillet on a two-body solid: 47983.03 (analytic 47982.83) — the far body is untouched.
 - Revolve: 9409.6 vs 9424.8 analytic (facet error). Push/pull face: 35000 as expected.
 - STEP/STL writers produce non-empty, structurally valid files.
+- Draft 10° on a 50×30×20 extrusion: 35 974.10 mm³ against the analytic prismatoid
+  1500h + 160kh²/2 + 4k²h³/3, and the top widens by exactly 2·h·tan(10°).
+- Shell 2 mm on the same box: 8 472.00 mm³ with the top face open, 10 864.00 mm³ closed (both
+  exact), and a 40 mm wall is rejected instead of producing broken geometry.
+- Split at Z = 10: 15 000 + 15 000 mm³; a plane outside the body returns no half.
+- Loft between r10 and r5 circles 20 mm apart: 3 651.26 mm³ against 3 665.19 analytic (48-gon).
+- Sweep of a 10×4 profile along a 50 mm path: 2 000.00 mm³; twist + scale produce valid solids.
+- 3MF: valid ZIP/OPC package, stored-entry CRC verified, two objects with their display colours.
+- STEP faceted roundtrip: 30 000.00 mm³ after re-import; an analytic-surface STEP is rejected.
+- DXF import: LINE, CIRCLE, ARC and a closed LWPOLYLINE (5 lines) become sketch geometry.
+- Drawing sheet: 4 views, 49 edges with 25 hidden on a box, SVG/PDF/DXF written; PDF xref offsets
+  verified against real object positions.
 
 In the running app (Chromium, synthetic pointer input through the real input pipeline):
 
@@ -241,12 +290,25 @@ In the running app (Chromium, synthetic pointer input through the real input pip
 - Fillet from the contextual bar: 2 mm applied with preview, feature tree shows no error.
 - Extrude of a selected region only builds that region (not every profile in the sketch).
 - Save / reload: project list, features and thumbnails restored from IndexedDB.
+- Sketch → Extrude → select body → **Shell**: 12 240 mm³ hollowed to 7 536 mm³ with a 2 mm wall
+  (exactly 12240 − 98·8·6), feature tree clean.
+- Select body → **Split**: one 2 733.7 mm³ body became 1 375.8 + 1 357.9 mm³, no feature errors.
+- **Section view**: chip with plane and offset appears, the dock switches to section-only actions.
+- **Polygon** and **Slot** pens: one drag each produced two closed profiles in a fresh sketch.
+- **Add / Shift** gathered two profiles and **Loft** built the body; two coplanar profiles are
+  refused instead of producing an empty body.
+- **Section view** really cuts: 22 250 mm³ body reads 11 125 mm³ at the mid plane and renders as a
+  thin plate at a 0.5 mm offset.
+- **2D drawing** panel built a 4-view sheet in the app (67 visible / 138 hidden edges).
 - No console errors during the flows.
 
 Visual review: the redesigned interface was rendered in Chromium at desktop and tablet sizes and
 inspected in the modelling, selection, sketch and history-panel states (`shots/`, git-ignored). This
 is a layout check, not a hardware check.
 
-**Not verified:** real iPad / Apple Pencil hardware, Safari-specific palm rejection and Pencil Pro
-behaviours, offline installation via Add to Home Screen, and the GitHub Pages deployed URL. Those
+**Not verified:** the 4K screenshot, the 3MF download, and the DXF / STEP file pickers were not
+clicked through in the browser (their output is covered by the kernel checks above). Sweep, Isolate
+and the three display modes were checked in the kernel and the DOM, not eyeballed in the viewport.
+Real iPad / Apple Pencil hardware, Safari-specific palm rejection and Pencil Pro behaviours, offline
+installation via Add to Home Screen, and the GitHub Pages deployed URL are also unverified — those
 require physical hardware and a published repository and are not claimed to work.

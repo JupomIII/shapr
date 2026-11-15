@@ -32,26 +32,35 @@ import {
   filletEdge,
   intersectSolids,
   linearPattern,
+  loftSolid,
   mirrorSolid,
   pushPullFace,
   revolveRegions,
   rotateSolid,
+  shellSolid,
+  splitByPlane,
   subtractSolids,
+  sweepRegions,
+  to3D,
   transformSolid,
   translateSolid,
   unionSolids,
 } from '../kernel/ops';
-import { sketchRegions } from '../sketch/geometry';
+import { sketchOpenChains, sketchRegions } from '../sketch/geometry';
 import {
   ChamferFeature,
   ExtrudeFeature,
   Feature,
   FilletFeature,
+  LoftFeature,
   MirrorFeature,
   PatternFeature,
   ProjectDoc,
   PushPullFeature,
   RevolveFeature,
+  ShellFeature,
+  SplitFeature,
+  SweepFeature,
   TransformFeature,
 } from './types';
 
@@ -62,6 +71,8 @@ export interface EvalBody {
   solid: Solid;
   measure: SolidMeasure;
   hidden: boolean;
+  /** Display / export colour; undefined falls back to the viewport default. */
+  color?: string;
 }
 
 export interface EvalResult {
@@ -144,8 +155,15 @@ function bboxExtentAlong(solid: Solid, origin: Vec3, n: Vec3): { lo: number; hi:
   return { lo, hi };
 }
 
-function makeBody(id: string, name: string, featureId: string, solid: Solid, hidden = false): EvalBody {
-  return { id, name, featureId, solid, measure: measureSolid(solid), hidden };
+function makeBody(
+  id: string,
+  name: string,
+  featureId: string,
+  solid: Solid,
+  hidden = false,
+  color?: string,
+): EvalBody {
+  return { id, name, featureId, solid, measure: measureSolid(solid), hidden, color };
 }
 
 export function evaluate(doc: ProjectDoc): EvalResult {
@@ -199,14 +217,16 @@ export function evaluate(doc: ProjectDoc): EvalResult {
             tool = translateSolid(tool, scale3(frame.n, lo - 5));
           } else {
             const h = feat.height * feat.direction;
-            tool = extrudeRegions(regs, frame, h);
+            tool = extrudeRegions(regs, frame, h, feat.draft ?? 0);
           }
           if (!tool.faces.length) {
             errors[f.id] = 'Extrusion produced no solid';
             break;
           }
           if (feat.operation === 'new') {
-            bodies.push(makeBody(`${f.id}#${bodies.length}`, f.name, f.id, tool, f.hidden));
+            bodies.push(
+              makeBody(`${f.id}#${bodies.length}`, f.name, f.id, tool, f.hidden, feat.color),
+            );
           } else if (feat.operation === 'join') {
             const target = targets[0] ?? bodies[bodies.length - 1];
             if (!target) {
@@ -217,7 +237,7 @@ export function evaluate(doc: ProjectDoc): EvalResult {
               else
                 bodies = bodies.map((b) =>
                   b.id === target.id
-                    ? makeBody(b.id, b.name, b.featureId, merged, b.hidden || f.hidden)
+                    ? makeBody(b.id, b.name, b.featureId, merged, b.hidden || f.hidden, b.color)
                     : b,
                 );
             }
@@ -273,18 +293,22 @@ export function evaluate(doc: ProjectDoc): EvalResult {
             break;
           }
           if (feat.operation === 'new') {
-            bodies.push(makeBody(`${f.id}#${bodies.length}`, f.name, f.id, tool, f.hidden));
+            bodies.push(
+              makeBody(`${f.id}#${bodies.length}`, f.name, f.id, tool, f.hidden, feat.color),
+            );
           } else if (feat.operation === 'cut') {
             bodies = bodies.map((b) => {
               const res = subtractSolids(b.solid, tool);
-              return res.faces.length ? makeBody(b.id, b.name, b.featureId, res, b.hidden) : b;
+              return res.faces.length ? makeBody(b.id, b.name, b.featureId, res, b.hidden, b.color) : b;
             });
           } else {
             const target = targetBodies(bodies, feat.targetBodyId)[0] ?? bodies[bodies.length - 1];
             if (target) {
               const merged = unionSolids(target.solid, tool);
               bodies = bodies.map((b) =>
-                b.id === target.id ? makeBody(b.id, b.name, b.featureId, merged, b.hidden) : b,
+                b.id === target.id
+                  ? makeBody(b.id, b.name, b.featureId, merged, b.hidden, b.color)
+                  : b,
               );
             }
           }
@@ -308,7 +332,7 @@ export function evaluate(doc: ProjectDoc): EvalResult {
             break;
           }
           bodies = bodies.map((b) =>
-            b.id === body.id ? makeBody(b.id, b.name, b.featureId, res, b.hidden) : b,
+            b.id === body.id ? makeBody(b.id, b.name, b.featureId, res, b.hidden, b.color) : b,
           );
           break;
         }
@@ -330,7 +354,7 @@ export function evaluate(doc: ProjectDoc): EvalResult {
             break;
           }
           bodies = bodies.map((b) =>
-            b.id === body.id ? makeBody(b.id, b.name, b.featureId, res, b.hidden) : b,
+            b.id === body.id ? makeBody(b.id, b.name, b.featureId, res, b.hidden, b.color) : b,
           );
           break;
         }
@@ -352,7 +376,7 @@ export function evaluate(doc: ProjectDoc): EvalResult {
             break;
           }
           bodies = bodies.map((b) =>
-            b.id === body.id ? makeBody(b.id, b.name, b.featureId, res, b.hidden) : b,
+            b.id === body.id ? makeBody(b.id, b.name, b.featureId, res, b.hidden, b.color) : b,
           );
           break;
         }
@@ -374,7 +398,7 @@ export function evaluate(doc: ProjectDoc): EvalResult {
                   body.measure.centroid,
                 );
           bodies = bodies.map((b) =>
-            b.id === body.id ? makeBody(b.id, b.name, b.featureId, res, b.hidden) : b,
+            b.id === body.id ? makeBody(b.id, b.name, b.featureId, res, b.hidden, b.color) : b,
           );
           break;
         }
@@ -391,7 +415,7 @@ export function evaluate(doc: ProjectDoc): EvalResult {
           const res = unionSolids(body.solid, mirrored);
           bodies = bodies.map((b) =>
             b.id === body.id && res.faces.length
-              ? makeBody(b.id, b.name, b.featureId, res, b.hidden)
+              ? makeBody(b.id, b.name, b.featureId, res, b.hidden, b.color)
               : b,
           );
           break;
@@ -416,8 +440,151 @@ export function evaluate(doc: ProjectDoc): EvalResult {
             res = translateSolid(res, feat.translation);
           }
           bodies = bodies.map((b) =>
-            b.id === body.id ? makeBody(b.id, b.name, b.featureId, res, b.hidden) : b,
+            b.id === body.id ? makeBody(b.id, b.name, b.featureId, res, b.hidden, b.color) : b,
           );
+          break;
+        }
+        case 'shell': {
+          const feat = f as ShellFeature;
+          const body = bodies.find((b) => b.id === feat.bodyId);
+          if (!body) {
+            errors[f.id] = 'Body missing';
+            break;
+          }
+          const res = shellSolid(body.solid, feat.thickness, feat.openFaces);
+          if (!res) {
+            errors[f.id] = 'Shell failed — try a thinner wall or fewer open faces';
+            break;
+          }
+          bodies = bodies.map((b) =>
+            b.id === body.id ? makeBody(b.id, b.name, b.featureId, res, b.hidden, b.color) : b,
+          );
+          break;
+        }
+        case 'sweep': {
+          const feat = f as SweepFeature;
+          const sk = getSketch(feat.sketchId);
+          const pathSk = getSketch(feat.pathSketchId);
+          if (!sk) {
+            errors[f.id] = 'Profile sketch missing';
+            break;
+          }
+          if (!pathSk) {
+            errors[f.id] = 'Path sketch missing';
+            break;
+          }
+          const frame = frameOf(sk.plane);
+          const allRegs = regions[sk.id] ?? sketchRegions(sk);
+          regions[sk.id] = allRegs;
+          const regs =
+            feat.regionIndex != null && allRegs[feat.regionIndex]
+              ? [allRegs[feat.regionIndex]]
+              : allRegs;
+          if (!regs.length) {
+            errors[f.id] = 'Profile sketch has no closed profile';
+            break;
+          }
+          const chains = sketchOpenChains(pathSk);
+          const chain = chains.slice().sort((a, b) => a.length - b.length).pop();
+          if (!chain || chain.length < 2) {
+            errors[f.id] = 'Path sketch has no open curve to sweep along';
+            break;
+          }
+          const pathFrame = frameOf(pathSk.plane);
+          const path3 = chain.map((p) => to3D(pathFrame, p));
+          const tool = sweepRegions(regs, frame, path3, {
+            twist: feat.twist,
+            scale: feat.scale,
+          });
+          if (!tool) {
+            errors[f.id] = 'Sweep produced no solid';
+            break;
+          }
+          if (feat.operation === 'new') {
+            bodies.push(
+              makeBody(`${f.id}#${bodies.length}`, f.name, f.id, tool, f.hidden, feat.color),
+            );
+          } else if (feat.operation === 'cut') {
+            bodies = bodies.map((b) => {
+              const res = subtractSolids(b.solid, tool);
+              return res.faces.length ? makeBody(b.id, b.name, b.featureId, res, b.hidden, b.color) : b;
+            });
+          } else {
+            const target = bodies[bodies.length - 1];
+            if (target) {
+              const merged = unionSolids(target.solid, tool);
+              bodies = bodies.map((b) =>
+                b.id === target.id
+                  ? makeBody(b.id, b.name, b.featureId, merged, b.hidden, b.color)
+                  : b,
+              );
+            }
+          }
+          break;
+        }
+        case 'loft': {
+          const feat = f as LoftFeature;
+          const loops: Vec3[][] = [];
+          for (const prof of feat.profiles) {
+            const sk = getSketch(prof.sketchId);
+            if (!sk) continue;
+            const allRegs = regions[sk.id] ?? sketchRegions(sk);
+            regions[sk.id] = allRegs;
+            const reg = prof.regionIndex != null ? allRegs[prof.regionIndex] : allRegs[0];
+            if (!reg) continue;
+            const frame = frameOf(sk.plane);
+            loops.push(reg.outer.map((p) => to3D(frame, p)));
+          }
+          if (loops.length < 2) {
+            errors[f.id] = 'Loft needs at least two profiles';
+            break;
+          }
+          const tool = loftSolid(loops, feat.closed);
+          if (!tool || measureSolid(tool).volume < 1e-3) {
+            errors[f.id] = 'Loft needs profiles on different planes or heights';
+            break;
+          }
+          if (feat.operation === 'new') {
+            bodies.push(
+              makeBody(`${f.id}#${bodies.length}`, f.name, f.id, tool, f.hidden, feat.color),
+            );
+          } else {
+            const target = bodies[bodies.length - 1];
+            if (target) {
+              const merged = unionSolids(target.solid, tool);
+              bodies = bodies.map((b) =>
+                b.id === target.id
+                  ? makeBody(b.id, b.name, b.featureId, merged, b.hidden, b.color)
+                  : b,
+              );
+            } else {
+              bodies.push(
+                makeBody(`${f.id}#${bodies.length}`, f.name, f.id, tool, f.hidden, feat.color),
+              );
+            }
+          }
+          break;
+        }
+        case 'split': {
+          const feat = f as SplitFeature;
+          const body = bodies.find((b) => b.id === feat.bodyId);
+          if (!body) {
+            errors[f.id] = 'Body missing';
+            break;
+          }
+          const n: Vec3 =
+            feat.plane === 'XY' ? [0, 0, 1] : feat.plane === 'YZ' ? [1, 0, 0] : [0, 1, 0];
+          const halves = splitByPlane(body.solid, n, feat.offset ?? 0);
+          const made: EvalBody[] = [];
+          if (halves.positive)
+            made.push(makeBody(`${f.id}#a`, `${body.name} A`, f.id, halves.positive, f.hidden, body.color));
+          if (halves.negative)
+            made.push(makeBody(`${f.id}#b`, `${body.name} B`, f.id, halves.negative, f.hidden, body.color));
+          if (!made.length) {
+            errors[f.id] = 'The plane does not cross the body';
+            break;
+          }
+          bodies = bodies.flatMap((b) => (b.id === body.id ? made : [b]));
           break;
         }
         case 'import': {
@@ -429,7 +596,7 @@ export function evaluate(doc: ProjectDoc): EvalResult {
             errors[f.id] = 'Imported mesh had no usable faces';
             break;
           }
-          bodies.push(makeBody(`${f.id}#0`, f.name, f.id, solid, f.hidden));
+          bodies.push(makeBody(`${f.id}#0`, f.name, f.id, solid, f.hidden, (f as { color?: string }).color));
           break;
         }
       }

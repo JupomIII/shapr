@@ -31,7 +31,9 @@ import {
   addCircle,
   addConstraint,
   addLine,
+  addPolygon,
   addRectangle,
+  addSlot,
   addSpline,
   applyRecognized,
   autoAxisConstraint,
@@ -80,12 +82,16 @@ export class InteractionController {
   private box: { start: { x: number; y: number }; el: HTMLDivElement } | null = null;
   private orbitDrag: { x: number; y: number } | null = null;
   private lastPendingAt = 0;
+  private shiftDown = false;
   private hoverRaf = 0;
   private lastHover: { x: number; y: number } | null = null;
 
   constructor(private vp: Viewport) {
     this.gesture = new GestureEngine({
-      onPrimaryDown: (p) => this.primaryDown(p),
+      onPrimaryDown: (p, e) => {
+        this.setModifiers(e);
+        this.primaryDown(p);
+      },
       onPrimaryMove: (p, e) => this.primaryMove(p, e),
       onPrimaryUp: (p) => this.primaryUp(p),
       onTap: (p) => this.handleTap(p),
@@ -142,6 +148,11 @@ export class InteractionController {
     else this.selectDown(p);
   }
 
+  /** Shift turns a mouse tap into an addition; touch uses the dock toggle. */
+  setModifiers(e: PointerEvent) {
+    this.shiftDown = e.shiftKey;
+  }
+
   private primaryMove(p: PointerSample, e: PointerEvent) {
     if (this.stroke) {
       this.sketchMove(p, e);
@@ -169,11 +180,12 @@ export class InteractionController {
   /* ------------------------------- selection ------------------------------- */
 
   private selectDown(p: PointerSample) {
+    const additive = this.shiftDown || S.store.state.additiveSelect;
     const region = this.pickRegion(p.x, p.y);
     if (region) {
-      S.selectItem(region);
+      S.selectItem(region, additive);
       const sk = S.sketchById(region.sketchId) ?? null;
-      if (sk) this.beginExtrudeDrag(p, sk, region.regionIndex ?? null);
+      if (sk && !additive) this.beginExtrudeDrag(p, sk, region.regionIndex ?? null);
       return;
     }
     const edge = this.vp.pickEdge(p.x, p.y);
@@ -187,7 +199,7 @@ export class InteractionController {
           (edge.edge.a[1] + edge.edge.b[1]) / 2,
           (edge.edge.a[2] + edge.edge.b[2]) / 2,
         ],
-      });
+      }, additive);
       return;
     }
     const face = this.vp.pickFace(p.x, p.y);
@@ -201,11 +213,11 @@ export class InteractionController {
         point: face.point,
         normal: f?.plane.n,
       };
-      S.selectItem(item);
-      if (f) this.beginPushPullDrag(p, item, f.plane.n, face.point);
+      S.selectItem(item, additive);
+      if (f && !additive) this.beginPushPullDrag(p, item, f.plane.n, face.point);
       return;
     }
-    S.selectItem(null);
+    if (!additive) S.selectItem(null);
     // Dragging empty space orbits, like a finger drag on the iPad. A click that
     // never moves still just deselects.
     if (p.kind === 'mouse') this.orbitDrag = { x: p.x, y: p.y };
@@ -323,8 +335,14 @@ export class InteractionController {
       S.selectItem(null);
       return;
     }
+    // Additive selection (dock toggle, or Shift with a mouse) is what makes
+    // multi-profile tools like Loft reachable outside a sketch.
+    const additive = this.shiftDown || S.store.state.additiveSelect;
     if (candidates.length === 1) {
-      S.selectItem(candidates[0]);
+      // Pointer-down already applied the selection; toggling again here would
+      // undo it (a tap is a down plus an up).
+      if (additive && S.store.state.selection.some((x) => S.sameSelection(x, candidates[0]))) return;
+      S.selectItem(candidates[0], additive);
       return;
     }
 
@@ -758,6 +776,10 @@ export class InteractionController {
           a,
         ],
       ];
+    } else if (tool === 'slot') {
+      draft.polylines = [slotOutline(st.start, st.current)];
+    } else if (tool === 'polygon') {
+      draft.polylines = [polygonOutline(st.start, st.current, S.store.state.polygonSides)];
     } else if (tool === 'circle') {
       draft.polylines = [circleSamples(st.start, Math.max(0.01, dist2(st.start, st.current)))];
     } else if (tool === 'arc') {
@@ -834,6 +856,14 @@ export class InteractionController {
           if (r.height > 1e-4) addConstraint(draft, 'length', [r.lines[1]], r.height);
           break;
         }
+        case 'slot': {
+          addSlot(draft, st.start, st.current);
+          break;
+        }
+        case 'polygon': {
+          addPolygon(draft, st.start, st.current, S.store.state.polygonSides);
+          break;
+        }
         case 'circle': {
           const r = Math.max(0.05, dist2(st.start, st.current));
           const id = addCircle(draft, st.start, r);
@@ -870,6 +900,47 @@ export function circleSamples(c: Vec2, r: number, n = 64): Vec2[] {
   for (let i = 0; i <= n; i++) {
     const a = (i / n) * Math.PI * 2;
     out.push([c[0] + Math.cos(a) * r, c[1] + Math.sin(a) * r]);
+  }
+  return out;
+}
+
+/** Stadium outline used for the slot preview and as a normalised shape. */
+export function slotOutline(a: Vec2, b: Vec2, n = 24): Vec2[] {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return [a, b];
+  const dir: Vec2 = [dx / len, dy / len];
+  const perp: Vec2 = [-dir[1], dir[0]];
+  const r = len * 0.25;
+  const c0: Vec2 = [a[0] + dir[0] * r, a[1] + dir[1] * r];
+  const c1: Vec2 = [a[0] + dir[0] * (len - r), a[1] + dir[1] * (len - r)];
+  const out: Vec2[] = [];
+  const p = (c: Vec2, s: number): Vec2 => [c[0] + perp[0] * r * s, c[1] + perp[1] * r * s];
+  out.push(p(c0, 1), p(c1, 1));
+  const a0 = Math.atan2(perp[1], perp[0]);
+  for (let i = 1; i < n; i++) {
+    const ang = a0 - (Math.PI * i) / n;
+    out.push([c1[0] + Math.cos(ang) * r, c1[1] + Math.sin(ang) * r]);
+  }
+  out.push(p(c1, -1), p(c0, -1));
+  for (let i = 1; i < n; i++) {
+    const ang = a0 + Math.PI - (Math.PI * i) / n;
+    out.push([c0[0] + Math.cos(ang) * r, c0[1] + Math.sin(ang) * r]);
+  }
+  out.push(p(c0, 1));
+  return out;
+}
+
+export function polygonOutline(center: Vec2, vertex: Vec2, sides: number): Vec2[] {
+  const n = Math.max(3, Math.min(16, Math.round(sides)));
+  const r = Math.hypot(vertex[0] - center[0], vertex[1] - center[1]);
+  if (r < 1e-6) return [center, vertex];
+  const a0 = Math.atan2(vertex[1] - center[1], vertex[0] - center[0]);
+  const out: Vec2[] = [];
+  for (let i = 0; i <= n; i++) {
+    const ang = a0 + (i / n) * Math.PI * 2;
+    out.push([center[0] + Math.cos(ang) * r, center[1] + Math.sin(ang) * r]);
   }
   return out;
 }

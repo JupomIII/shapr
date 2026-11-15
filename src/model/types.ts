@@ -14,6 +14,10 @@ export type FeatureKind =
   | 'pattern'
   | 'mirror'
   | 'transform'
+  | 'shell'
+  | 'sweep'
+  | 'loft'
+  | 'split'
   | 'import';
 
 export interface FeatureBase {
@@ -37,9 +41,13 @@ export interface ExtrudeFeature extends FeatureBase {
   operation: ExtrudeOperation;
   direction: 1 | -1;
   throughAll?: boolean;
+  /** Draft angle in degrees; positive widens the far end of the extrusion. */
+  draft?: number;
   targetBodyId?: string | null;
   /** Which profile of the sketch to use (null = all profiles). */
   regionIndex?: number | null;
+  /** Display colour of the body this feature creates. */
+  color?: string;
 }
 
 export interface RevolveFeature extends FeatureBase {
@@ -52,6 +60,52 @@ export interface RevolveFeature extends FeatureBase {
   operation: 'new' | 'join' | 'cut';
   targetBodyId?: string | null;
   regionIndex?: number | null;
+  color?: string;
+}
+
+export interface ShellFeature extends FeatureBase {
+  kind: 'shell';
+  bodyId: string;
+  thickness: number;
+  /** Faces removed by the shell, referenced by plane point + normal. */
+  openFaces: FaceRef[];
+}
+
+export interface SweepFeature extends FeatureBase {
+  kind: 'sweep';
+  sketchId: string;
+  regionIndex?: number | null;
+  /** Sketch whose open chain is the sweep path. */
+  pathSketchId: string;
+  /** Twist along the path, in degrees. */
+  twist: number;
+  /** Scale of the profile at the far end (1 = constant section). */
+  scale: number;
+  operation: 'new' | 'join' | 'cut';
+  color?: string;
+}
+
+export interface LoftProfileRef {
+  sketchId: string;
+  regionIndex: number | null;
+}
+
+export interface LoftFeature extends FeatureBase {
+  kind: 'loft';
+  /** Profiles in lofting order. */
+  profiles: LoftProfileRef[];
+  /** Join the last profile back to the first (periodic loft). */
+  closed: boolean;
+  operation: 'new' | 'join' | 'cut';
+  color?: string;
+}
+
+export interface SplitFeature extends FeatureBase {
+  kind: 'split';
+  bodyId: string;
+  plane: 'XY' | 'XZ' | 'YZ';
+  /** Offset of the cutting plane along its normal, in mm. */
+  offset: number;
 }
 
 export interface FilletFeature extends FeatureBase {
@@ -110,6 +164,7 @@ export interface ImportFeature extends FeatureBase {
   kind: 'import';
   /** Triangle soup in mm, stored as a flat array of points. */
   positions: Vec3[];
+  color?: string;
 }
 
 export type Feature =
@@ -122,7 +177,22 @@ export type Feature =
   | PatternFeature
   | MirrorFeature
   | TransformFeature
+  | ShellFeature
+  | SweepFeature
+  | LoftFeature
+  | SplitFeature
   | ImportFeature;
+
+/** Body colour palette, shared by the viewport and colour exports (3MF). */
+export const BODY_COLORS = [
+  '#ccd0d4',
+  '#c0c6cc',
+  '#d8cfc2',
+  '#b9c6d2',
+  '#c8d3c6',
+  '#d2c3c0',
+  '#aab4be',
+];
 
 export type UnitSystem = 'mm' | 'cm' | 'm' | 'in';
 

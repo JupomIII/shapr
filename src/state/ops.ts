@@ -9,11 +9,15 @@ import {
   ExtrudeOperation,
   Feature,
   FilletFeature,
+  LoftFeature,
   MirrorFeature,
   PatternFeature,
   RevolveFeature,
+  ShellFeature,
+  SplitFeature,
+  SweepFeature,
 } from '../model/types';
-import { sketchRegions } from '../sketch/geometry';
+import { sketchOpenChains, sketchRegions } from '../sketch/geometry';
 import { solveSketch } from '../sketch/solver';
 import { ConstraintKind } from '../sketch/types';
 import * as S from './store';
@@ -306,6 +310,160 @@ export function patternSelected(mode: 'linear' | 'circular') {
 
 export function extrudeCutThrough() {
   startExtrude('cut', true);
+}
+
+/* --------------------- shell, split, sweep, loft, isolate ------------------ */
+
+export function startShell() {
+  const s = S.store.state;
+  const faces = s.selection.filter(
+    (x) => x.kind === 'face' && !!x.bodyId && !!x.point && !!x.normal,
+  );
+  const bodyId =
+    (faces[0]?.bodyId as string | undefined) ??
+    s.selection.find((x) => !!x.bodyId)?.bodyId;
+  if (!bodyId) {
+    S.toast('Select the face(s) to open, or a body to hollow');
+    return;
+  }
+  const feature: ShellFeature = {
+    id: S.uid('ft'),
+    name: featureName('shell', 'Shell'),
+    kind: 'shell',
+    bodyId,
+    thickness: 2,
+    openFaces: faces.map((x) => ({ point: x.point as Vec3, normal: x.normal as Vec3 })),
+  };
+  S.addFeature(feature, [{ kind: 'body', bodyId }]);
+  S.toast(
+    faces.length
+      ? `Shell 2 mm · ${faces.length} face${faces.length > 1 ? 's' : ''} removed`
+      : 'Shell 2 mm · edit the wall in Features',
+  );
+}
+
+export function startSplit() {
+  const sel = S.store.state.selection.find((x) => !!x.bodyId);
+  if (!sel?.bodyId) {
+    S.toast('Select a body to split');
+    return;
+  }
+  const body = S.store.state.evalResult.bodies.find((b) => b.id === sel.bodyId);
+  if (!body) return;
+  const m = body.measure;
+  const ext = [
+    m.bboxMax[0] - m.bboxMin[0],
+    m.bboxMax[1] - m.bboxMin[1],
+    m.bboxMax[2] - m.bboxMin[2],
+  ];
+  const axis = ext[0] >= ext[1] && ext[0] >= ext[2] ? 0 : ext[1] >= ext[2] ? 1 : 2;
+  const feature: SplitFeature = {
+    id: S.uid('ft'),
+    name: featureName('split', 'Split body'),
+    kind: 'split',
+    bodyId: sel.bodyId,
+    plane: axis === 0 ? 'YZ' : axis === 1 ? 'XZ' : 'XY',
+    offset: Math.round(m.centroid[axis] * 10) / 10,
+  };
+  S.addFeature(feature, []);
+  S.toast('Body split in two — edit the plane in Features');
+}
+
+export function startSweep() {
+  const s = S.store.state;
+  const region = s.selection.find((x) => x.kind === 'region' && !!x.sketchId);
+  if (!region?.sketchId) {
+    S.toast('Select a profile to sweep');
+    return;
+  }
+  const sk = S.sketchById(region.sketchId);
+  if (!sk) return;
+  const candidates = s.doc.sketches
+    .filter((x) => x.id !== sk.id)
+    .filter((x) => sketchOpenChains(x).some((c) => c.length >= 2));
+  if (!candidates.length) {
+    S.toast('Draw the path first: an open line, arc or spline in another sketch');
+    return;
+  }
+  const feature: SweepFeature = {
+    id: S.uid('ft'),
+    name: featureName('sweep', 'Sweep'),
+    kind: 'sweep',
+    sketchId: sk.id,
+    regionIndex: region.regionIndex ?? null,
+    pathSketchId: candidates[candidates.length - 1].id,
+    twist: 0,
+    scale: 1,
+    operation: 'new',
+  };
+  S.addFeature(feature, []);
+  S.toast(`Swept along ${candidates[candidates.length - 1].name}`);
+}
+
+export function startLoft() {
+  const s = S.store.state;
+  const picked = s.selection.filter((x) => x.kind === 'region' && !!x.sketchId);
+  if (picked.length < 2) {
+    S.toast('Select two or more profiles — tap each one in turn');
+    return;
+  }
+  // Two profiles sitting on the same plane have nothing to loft between.
+  const planes = picked.map((p) => S.sketchById(p.sketchId)?.plane ?? null);
+  const samePlane =
+    planes.length > 1 &&
+    planes.every(
+      (pl) =>
+        !!pl &&
+        Math.abs(Math.abs(pl.n[0]) - Math.abs(planes[0]!.n[0])) < 1e-6 &&
+        Math.abs(Math.abs(pl.n[1]) - Math.abs(planes[0]!.n[1])) < 1e-6 &&
+        Math.abs(Math.abs(pl.n[2]) - Math.abs(planes[0]!.n[2])) < 1e-6 &&
+        Math.hypot(
+          pl.origin[0] - planes[0]!.origin[0],
+          pl.origin[1] - planes[0]!.origin[1],
+          pl.origin[2] - planes[0]!.origin[2],
+        ) < 1e-6,
+    );
+  if (samePlane) {
+    S.toast('Loft needs profiles on different planes or heights');
+    return;
+  }
+
+  const order = new Map<string, number>();
+  s.doc.features.forEach((f, i) => {
+    if (f.kind === 'sketch') order.set(f.sketchId, i);
+  });
+  const profiles = picked
+    .map((p) => ({ sketchId: p.sketchId as string, regionIndex: p.regionIndex ?? null }))
+    .sort(
+      (a, b) => (order.get(a.sketchId) ?? 0) - (order.get(b.sketchId) ?? 0),
+    );
+  const feature: LoftFeature = {
+    id: S.uid('ft'),
+    name: featureName('loft', 'Loft'),
+    kind: 'loft',
+    profiles,
+    closed: false,
+    operation: 'new',
+  };
+  S.addFeature(feature, []);
+  S.store.set({ additiveSelect: false });
+  S.toast(`Loft through ${profiles.length} profiles`);
+}
+
+export function isolateSelection() {
+  const ids = Array.from(
+    new Set(S.store.state.selection.map((x) => x.bodyId).filter((x): x is string => !!x)),
+  );
+  if (!ids.length) {
+    S.toast('Select a body to isolate');
+    return;
+  }
+  S.isolateBodies(ids);
+  S.toast(`Isolated ${ids.length} bod${ids.length > 1 ? 'ies' : 'y'}`);
+}
+
+export function showAllBodies() {
+  S.clearIsolate();
 }
 
 export function measureSelection() {
