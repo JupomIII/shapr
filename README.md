@@ -3,6 +3,9 @@
 A touch-first, pencil-first parametric CAD workspace that runs entirely in the browser as a
 static site. No backend, no accounts, no paid services, no CAD licence.
 
+Live build: **<https://jupomiii.github.io/shapr/>** (GitHub Pages, deployed from `main` by
+`.github/workflows/deploy.yml`).
+
 Open it on an iPad, pick up the Apple Pencil, sketch on a plane, and drag the profile into a solid.
 Everything below runs locally: the geometry kernel, the constraint solver, the feature tree and
 project storage.
@@ -309,6 +312,7 @@ is a layout check, not a hardware check.
 **Not verified:** the 4K screenshot, the 3MF download, and the DXF / STEP file pickers were not
 clicked through in the browser (their output is covered by the kernel checks above). Sweep, Isolate
 and the three display modes were checked in the kernel and the DOM, not eyeballed in the viewport.
-Real iPad / Apple Pencil hardware, Safari-specific palm rejection and Pencil Pro behaviours, offline
-installation via Add to Home Screen, and the GitHub Pages deployed URL are also unverified — those
-require physical hardware and a published repository and are not claimed to work.
+The Pages deployment itself was checked: run 21 built and published <https://jupomiii.github.io/shapr/>,
+the served bundle is the local build, and the page loads with no console errors. Real iPad / Apple
+Pencil hardware, Safari-specific palm rejection and Pencil Pro behaviours, and offline installation
+via Add to Home Screen are unverified — those require physical hardware and are not claimed to work.
